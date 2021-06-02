@@ -36,6 +36,38 @@ impl<'a> Scanner<'a> {
             (_, false) => None,
         }
     }
+
+    fn eat_whitespace(&mut self) -> usize {
+        match self.buffer.find(|c| !char::is_whitespace(c)) {
+            Some(pos) => {
+                let (_ws, rest) = self.buffer.split_at(pos);
+                self.buffer = rest;
+
+                pos
+            }
+            _ => 0,
+        }
+    }
+
+    fn document_marker(&mut self) -> Option<Token<'a>> {
+        if self.buffer.starts_with("---") {
+            self.buffer = split_at(self.buffer, 3);
+
+            Token::DocumentStart.into()
+        } else if self.buffer.starts_with("...") {
+            self.buffer = split_at(self.buffer, 3);
+
+            Token::DocumentEnd.into()
+        } else {
+            None
+        }
+    }
+}
+
+#[inline(always)]
+fn split_at(b: &str, at: usize) -> &str {
+    let (_, rest) = b.split_at(at);
+    rest
 }
 
 impl<'a> Iterator for Scanner<'a> {
@@ -46,8 +78,14 @@ impl<'a> Iterator for Scanner<'a> {
             return Some(begin);
         }
 
+        self.eat_whitespace();
+
         if let Some(end) = self.stream_end() {
             return Some(end);
+        }
+
+        if let Some(document) = self.document_marker() {
+            return Some(document);
         }
 
         None
@@ -76,6 +114,20 @@ mod tests {
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn document_markers() {
+        let data = "\n---\n   \n...";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::DocumentStart                      => "expected start of document",
+            | Token::DocumentEnd                        => "expected end of document",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
