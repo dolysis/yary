@@ -6,7 +6,15 @@
 ///     <message>   A message to print on failure
 macro_rules! tokens {
     ($scanner:expr => $($id:tt $expected:expr $(=> $msg:tt)?),+ ) => {
-        $( tokens!(@unwrap $id $scanner => $expected $(=> $msg)? ) );+
+        let mut f = || -> std::result::Result<(), ::anyhow::Error> {
+            $( tokens!(@unwrap $id $scanner => $expected $(=> $msg)? ); )+
+
+            Ok(())
+        };
+
+        if let Err(e) = f() {
+            panic!("tokens! error: {}", e)
+        }
     };
 
     // <-- PRIVATE VARIANTS -->
@@ -25,11 +33,21 @@ macro_rules! tokens {
     };
     // Variant for token assert, no message
     (@token $scanner:expr => $expected:expr) => {
-        assert_eq!($scanner.next().expect("Unexpected end of events"), $expected)
+        let event = $scanner
+            .next()
+            .ok_or_else(
+                || anyhow::anyhow!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.buffer)
+            )?;
+
+        assert_eq!(event, $expected)
     };
     // Variant for token assert, no with message
     (@token $scanner:expr => $expected:expr, $msg:tt) => {
-        let event = $scanner.next().expect("Unexpected end of events");
+        let event = $scanner
+            .next()
+            .ok_or_else(
+                || anyhow::anyhow!("Unexpected end of tokens, {}: {:?} ~{}", $msg, $expected, $scanner.buffer)
+            )?;
 
         assert_eq!(event, $expected, $msg)
     };

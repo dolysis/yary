@@ -9,4 +9,5 @@ edition = "2018"
 [dependencies]
 
 [dev-dependencies]
+anyhow = "1"
 pretty_assertions = "0.7"
