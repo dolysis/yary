@@ -1,4 +1,4 @@
-use crate::token::{ScalarStyle, Slice, StreamEncoding, Token};
+use crate::token::{StreamEncoding, Token};
 
 #[derive(Debug)]
 struct Scanner<'a> {
@@ -38,15 +38,43 @@ impl<'a> Scanner<'a> {
     }
 
     fn eat_whitespace(&mut self) -> usize {
-        match self.buffer.find(|c| !char::is_whitespace(c)) {
-            Some(pos) => {
-                let (_ws, rest) = self.buffer.split_at(pos);
-                self.buffer = rest;
+        let mut slice = self.buffer.char_indices().peekable();
+        let mut chomped = None;
+        let mut chomp_line = false;
 
-                pos
+        while let Some((index, c)) = slice.next() {
+            match c {
+                // Eat spaces
+                ' ' => {}
+                // If we are starting a comment, chomp the entire line
+                '#' => chomp_line = true,
+                // Reset line chomp after eating one
+                '\n' => chomp_line = false,
+                // Chomp anything if we're eating the whole line
+                _ if chomp_line => {}
+                // We're done, encountered a character that isn't whitespace
+                _ => {
+                    chomped = Some(index);
+                    break;
+                }
             }
-            _ => 0,
         }
+
+        // Adjust our buffer by the chomped length
+        if let Some(index) = chomped {
+            self.buffer = split_at(self.buffer, index)
+        }
+
+        // Handle EOF
+        //
+        // if we hit this, then we didn't get a chance to set
+        // chomped in the while loop
+        if slice.peek().is_none() {
+            chomped = self.buffer.len().into();
+            self.buffer = ""
+        }
+
+        chomped.unwrap_or(0)
     }
 
     fn document_marker(&mut self) -> Option<Token<'a>> {
@@ -122,6 +150,32 @@ mod tests {
     #[test]
     fn document_markers() {
         let data = "\n---\n   \n...";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::DocumentStart                      => "expected start of document",
+            | Token::DocumentEnd                        => "expected end of document",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn chomp_comments() {
+        let data = "  # a comment\n\n#one two three\n       #four!";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn comment_in_document_markers() {
+        let data = "---\n# abcdefg \n  # another comment     \n...";
         let mut s = Scanner::new(data);
 
         tokens!(s =>
