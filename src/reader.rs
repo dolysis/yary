@@ -10,6 +10,8 @@ struct Reader<I> {
     buffer: VecDeque<char>,
     column: usize,
     mark: usize,
+
+    reset_column: bool,
 }
 
 impl<I> Reader<I>
@@ -22,6 +24,8 @@ where
             buffer: VecDeque::new(),
             column: 0,
             mark: 0,
+
+            reset_column: false,
         }
     }
 
@@ -66,13 +70,16 @@ where
 
     fn next_char(&mut self) -> Result<Option<char>> {
         match self.read_one()? {
-            Some('\n') => {
-                self.column = 0;
-                self.mark += 1;
-
-                Ok(Some('\n'))
-            }
             Some(c) => {
+                if self.reset_column {
+                    self.reset_column = false;
+                    self.column = 0;
+                }
+
+                if c == '\n' {
+                    self.reset_column = true;
+                }
+
                 self.column += 1;
                 self.mark += 1;
 
@@ -167,7 +174,7 @@ mod tests {
     #[test]
     fn column() {
         let data = data!("abc\nefg\nhijkl");
-        let expected = vec![1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5];
+        let expected = vec![1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 5];
         let mut r = Reader::new(data);
 
         assert_eq!(r.column(), 0);
