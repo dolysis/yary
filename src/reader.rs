@@ -49,8 +49,9 @@ where
 
     /// Attempt to reserve up to amt chars, returning the actual number added
     pub fn reserve(&mut self, amt: usize) -> Result<usize> {
-        let mut done = 1;
-        while done <= amt {
+        let mut done = 0;
+
+        while done < amt {
             match self.src.next() {
                 Some(Ok(c)) => self.buffer.push_front(c),
                 Some(Err(e)) => return Err(e),
