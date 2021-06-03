@@ -99,3 +99,97 @@ where
         self.next_char().transpose()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::{assert_eq, assert_ne};
+
+    macro_rules! data {
+        ($data:expr) => {
+            $data.chars().map(Ok)
+        };
+        () => {
+            "1234567890".chars().map(Ok)
+        };
+    }
+
+    #[test]
+    fn amount() {
+        let data = data!();
+        let r = Reader::new(data);
+
+        assert_eq!(r.into_iter().count(), 10);
+    }
+
+    #[test]
+    fn reserve() {
+        let data = data!();
+        let mut r = Reader::new(data);
+
+        let amount = r.reserve(20).expect("impossible to error");
+
+        assert_ne!(amount, 20);
+        assert_eq!(amount, 10);
+    }
+
+    #[test]
+    fn reserve_partial() {
+        let data = data!();
+        let mut r = Reader::new(data);
+
+        let amount = r.reserve(5).expect("impossible to error");
+
+        assert_eq!(amount, 5);
+    }
+
+    #[test]
+    fn reserve_one() {
+        let data = data!();
+        let mut r = Reader::new(data);
+
+        let amount = r.reserve(1).expect("impossible to error");
+
+        assert_eq!(amount, 1);
+    }
+
+    #[test]
+    fn reserve_zero() {
+        let data = data!();
+        let mut r = Reader::new(data);
+
+        let amount = r.reserve(0).expect("impossible to error");
+
+        assert_eq!(amount, 0);
+    }
+
+    #[test]
+    fn column() {
+        let data = data!("abc\nefg\nhijkl");
+        let expected = vec![1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5];
+        let mut r = Reader::new(data);
+
+        assert_eq!(r.column(), 0);
+
+        for indent in expected {
+            let c = r.next().unwrap().expect("impossible to error");
+
+            assert_eq!(r.column(), indent, "@ char: {}, mark: {}", c, r.mark());
+        }
+    }
+
+    #[test]
+    fn mark() {
+        let data = data!();
+        let expected = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let mut r = Reader::new(data);
+
+        assert_eq!(r.mark(), 0);
+
+        for mark in expected {
+            let c = r.next().unwrap().expect("impossible to error");
+
+            assert_eq!(r.mark(), mark, "@ char: {}, mark: {}", c, r.mark());
+        }
+    }
+}
