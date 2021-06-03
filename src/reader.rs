@@ -71,11 +71,13 @@ where
     fn next_char(&mut self) -> Result<Option<char>> {
         match self.read_one()? {
             Some(c) => {
+                // We hit a line end previously, reset column size
                 if self.reset_column {
                     self.reset_column = false;
                     self.column = 0;
                 }
 
+                // We just hit a line end, arm column reset
                 if c == '\n' {
                     self.reset_column = true;
                 }
