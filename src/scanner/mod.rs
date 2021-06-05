@@ -151,7 +151,7 @@ impl<'a> Scanner<'a>
 
     fn directive(&mut self) -> Result<Option<Token<'a>>>
     {
-        if !self.buffer.starts_with("%")
+        if !self.buffer.starts_with('%')
         {
             return Ok(None);
         }
@@ -175,12 +175,12 @@ impl<'a> Scanner<'a>
                     .buffer
                     .as_bytes()
                     .split_first()
-                    .ok_or_else(|| ScanError::MissingMajor)
+                    .ok_or(ScanError::MissingMajor)
                     .and_then(|(major, rest)| Ok((as_ascii_digit(major)?, rest)))?;
 
                 let minor = rest
                     .get(1)
-                    .ok_or_else(|| ScanError::MissingMinor)
+                    .ok_or(ScanError::MissingMinor)
                     .and_then(as_ascii_digit)?;
 
                 // %YAML 1.1
