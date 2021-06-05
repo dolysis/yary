@@ -2,6 +2,8 @@ mod error;
 #[macro_use]
 mod macros;
 
+use atoi::atoi;
+
 use self::error::{ScanError, ScanResult as Result};
 use crate::token::{StreamEncoding, Token};
 
@@ -29,7 +31,7 @@ impl<'a> Scanner<'a>
             return Ok(begin);
         }
 
-        self.eat_whitespace(true);
+        Self::eat_whitespace(&mut self.buffer, true);
 
         if let end @ Some(_) = self.stream_end()
         {
@@ -81,9 +83,9 @@ impl<'a> Scanner<'a>
     /// Chomp whitespace and optionally comments until we
     /// reach the next token, updating buffer[0] to the
     /// beginning of the new token
-    fn eat_whitespace(&mut self, comments: bool) -> usize
+    fn eat_whitespace(buffer: &mut &str, comments: bool) -> usize
     {
-        let mut slice = self.buffer.bytes().enumerate().peekable();
+        let mut slice = buffer.bytes().enumerate().peekable();
         let mut chomped = None;
         let mut chomp_line = false;
 
@@ -113,7 +115,7 @@ impl<'a> Scanner<'a>
         // Adjust our buffer by the chomped length
         if let Some(index) = chomped
         {
-            advance!(self.buffer, index);
+            advance!(*buffer, index);
         }
 
         // Handle EOF
@@ -122,8 +124,8 @@ impl<'a> Scanner<'a>
         // chomped in the while loop
         if slice.peek().is_none()
         {
-            chomped = self.buffer.len().into();
-            self.buffer = ""
+            chomped = buffer.len().into();
+            *buffer = ""
         }
 
         chomped.unwrap_or(0)
@@ -151,46 +153,69 @@ impl<'a> Scanner<'a>
 
     fn directive(&mut self) -> Result<Option<Token<'a>>>
     {
-        if !self.buffer.starts_with('%')
+        let mut buffer = self.buffer;
+
+        if !buffer.starts_with('%')
         {
             return Ok(None);
         }
 
         // Safety: we check above that we have len >= 1 (e.g a '%')
-        let kind = DirectiveKind::new(&self.buffer[1..])?;
+        //
+        // %YAML 1.1
+        //  ^^^^
+        // %TAG
+        //  ^^^
+        let kind = DirectiveKind::new(&buffer[1..])?;
 
         // '%' + 'YAML' or 'TAG'
-        advance!(self.buffer, 1 + kind.len());
+        advance!(buffer, 1 + kind.len());
 
         let token = match kind
         {
             DirectiveKind::Version =>
             {
                 // Chomp any preceding whitespace
-                self.eat_whitespace(false);
-
-                // Parse the major and minor version numbers
-
-                let (major, rest) = self
-                    .buffer
-                    .as_bytes()
-                    .split_first()
-                    .ok_or(ScanError::MissingMajor)
-                    .and_then(|(major, rest)| Ok((as_ascii_digit(major)?, rest)))?;
-
-                let minor = rest
-                    .get(1)
-                    .ok_or(ScanError::MissingMinor)
-                    .and_then(as_ascii_digit)?;
+                Self::eat_whitespace(&mut buffer, false);
 
                 // %YAML 1.1
-                //       ^^^
-                advance!(self.buffer, 3);
+                //       ^
+                let (major, skip) = scan_directive_version(buffer)?;
+
+                advance!(buffer, skip);
+
+                // %YAML 1.1
+                //        ^
+                match buffer.as_bytes()
+                {
+                    [b'.', ..] =>
+                    {
+                        advance!(buffer, 1);
+
+                        Ok(())
+                    },
+                    [] => Err(ScanError::UnexpectedEOF),
+                    _ => Err(ScanError::InvalidVersion),
+                }?;
+
+                // %YAML 1.1
+                //         ^
+                let (minor, skip) = scan_directive_version(buffer)?;
+
+                advance!(buffer, skip);
 
                 Token::VersionDirective(major, minor)
             },
-            DirectiveKind::Tag => todo!(),
+            DirectiveKind::Tag =>
+            {
+                todo!()
+            },
         };
+
+        // %YAML 1.1 # some comment\n
+        //          ^^^^^^^^^^^^^^^^^ buffer
+        // ^^^^^^^^^ self.buffer.len - buffer.len
+        advance!(self.buffer, self.buffer.len() - buffer.len());
 
         Ok(Some(token))
     }
@@ -251,15 +276,28 @@ enum StreamState
     Done,
 }
 
-#[inline]
-fn as_ascii_digit(d: &u8) -> Result<u8>
+fn scan_directive_version(b: &str) -> Result<(u8, usize)>
 {
-    if !d.is_ascii_digit()
-    {
-        return Err(ScanError::InvalidVersion);
-    }
+    let v_slice = take_while(b.as_bytes(), u8::is_ascii_digit);
+    let v = atoi(v_slice).ok_or(ScanError::InvalidVersion)?;
 
-    Ok(d - 48)
+    Ok((v, v_slice.len()))
+}
+
+fn take_while<F>(b: &[u8], f: F) -> &[u8]
+where
+    F: Fn(&u8) -> bool,
+{
+    let mut index = 0;
+
+    loop
+    {
+        match b.get(index)
+        {
+            Some(b) if f(b) => index += 1,
+            _ => return &b[..index],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -329,16 +367,42 @@ mod tests
     }
 
     #[test]
-    fn directive_yaml()
+    fn directive_version()
     {
         let data = "%YAML   1.1 # a comment\n";
         let mut s = Scanner::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
-            | Token::VersionDirective(1, 1)             => "expected version directive",
+            | Token::VersionDirective(1, 1)             => "expected version directive (1, 1)",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn directive_version_large()
+    {
+        let data = "%YAML   121.80 # a comment\n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::VersionDirective(121, 80)          => "expected version directive (121, 80)",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn directive_version_clean_failure()
+    {
+        let data = "%YAML   foo.bar # a comment\n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            > Result::<Token>::Err(ScanError::InvalidVersion)   => "expected an version directive error"
         );
     }
 
@@ -348,7 +412,7 @@ mod tests
         let data = "   abc";
         let mut s = Scanner::new(data);
 
-        s.eat_whitespace(false);
+        Scanner::eat_whitespace(&mut s.buffer, false);
 
         assert_eq!(s.buffer, "abc");
     }
@@ -359,7 +423,7 @@ mod tests
         let data = "abc";
         let mut s = Scanner::new(data);
 
-        s.eat_whitespace(false);
+        Scanner::eat_whitespace(&mut s.buffer, false);
 
         assert_eq!(s.buffer, "abc");
     }
