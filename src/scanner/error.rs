@@ -19,6 +19,14 @@ pub enum ScanError
     /// A directive major or minor digit was not 0..=9
     InvalidVersion,
 
+    /// Tag handle was not primary (!), secondary (!!) or
+    /// named (!alphanumeric!)
+    InvalidTagHandle,
+
+    /// Tag prefix was not separated from the handle by one
+    /// or more spaces
+    InvalidTagPrefix,
+
     /// Got end of stream while parsing a token
     UnexpectedEOF,
 }
