@@ -2,8 +2,10 @@ pub type Slice<'a> = std::borrow::Cow<'a, str>;
 
 /// Tokens that may be emitted by a YAML scanner
 #[derive(Debug, PartialEq)]
-pub enum Token<'a> {
-    /// The stream's start, with the byte (encoding) [virtual]
+pub enum Token<'a>
+{
+    /// The stream's start, with the byte (encoding)
+    /// [virtual]
     StreamStart(StreamEncoding),
     /// The stream's end [virtual]
     StreamEnd,
@@ -48,12 +50,14 @@ pub enum Token<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum StreamEncoding {
+pub enum StreamEncoding
+{
     UTF8,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ScalarStyle {
+pub enum ScalarStyle
+{
     Plain,
     SingleQuote,
     DoubleQuote,
