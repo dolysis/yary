@@ -9,5 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1"
 
+atoi = "0.4"
+
 [dev-dependencies]
 pretty_assertions = "0.7"
