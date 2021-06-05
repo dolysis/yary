@@ -9,10 +9,10 @@ pub enum Token<'a>
     StreamStart(StreamEncoding),
     /// The stream's end [virtual]
     StreamEnd,
-    /// The %YAML directive
-    VersionDirective(Slice<'a>, Slice<'a>),
+    /// The %YAML directive, (major,minor)
+    VersionDirective(u8, u8),
     /// The %TAG directive
-    TagDirective,
+    TagDirective(Slice<'a>, Slice<'a>),
     /// A ---
     DocumentStart,
     /// A ...
