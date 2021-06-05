@@ -2,7 +2,7 @@ use std::fmt;
 
 pub type ScanResult<T> = std::result::Result<T, ScanError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ScanError
 {
     /// Directive was not either YAML or TAG
@@ -18,6 +18,9 @@ pub enum ScanError
 
     /// A directive major or minor digit was not 0..=9
     InvalidVersion,
+
+    /// Got end of stream while parsing a token
+    UnexpectedEOF,
 }
 
 impl fmt::Display for ScanError
