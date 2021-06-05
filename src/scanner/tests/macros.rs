@@ -28,6 +28,14 @@ macro_rules! tokens {
     (@unwrap @ $scanner:expr => $expected:expr $(=> $msg:tt)? ) => {
         assert_eq!($scanner.next().transpose()?, $expected $(, $msg)? )
     };
+    (@unwrap > $scanner:expr => $expected:expr $(=> $msg:tt)? ) => {
+        let event = $scanner
+            .next()
+            .ok_or_else(
+                || anyhow::anyhow!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.buffer)
+            )?;
+        assert_eq!(event, $expected $(, $msg)? )
+    };
     // Forward to option assert any unknown sigils
     (@unwrap $any:tt $scanner:expr => $expected:expr $(=> $msg:tt)? ) => {
         tokens!(@unwrap @ $scanner:expr => $expected:expr $(=> $msg)? )
@@ -36,16 +44,18 @@ macro_rules! tokens {
     (@token $scanner:expr => $expected:expr) => {
         let event = $scanner
             .next()
+            .map(|r| r.map_err(|e| anyhow::anyhow!("{} ~{}", e, $scanner.buffer)))
             .ok_or_else(
                 || anyhow::anyhow!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.buffer)
             )??;
 
         assert_eq!(event, $expected)
     };
-    // Variant for token assert, no with message
+    // Variant for token assert, with message
     (@token $scanner:expr => $expected:expr, $msg:tt) => {
         let event = $scanner
             .next()
+            .map(|r| r.map_err(|e| anyhow::anyhow!("{} ~{}", e, $scanner.buffer)))
             .ok_or_else(
                 || anyhow::anyhow!("Unexpected end of tokens, {}: {:?} ~{}", $msg, $expected, $scanner.buffer)
             )??;
