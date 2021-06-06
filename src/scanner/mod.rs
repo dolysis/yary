@@ -48,6 +48,11 @@ impl<'a> Scanner<'a>
             return Ok(directive);
         }
 
+        if let anchor @ Some(_) = self.anchor()?
+        {
+            return Ok(anchor);
+        }
+
         Ok(None)
     }
 
@@ -274,6 +279,60 @@ impl<'a> Scanner<'a>
 
         Ok(Some(token))
     }
+
+    fn anchor(&mut self) -> Result<Option<Token<'a>>>
+    {
+        let mut buffer = self.buffer;
+
+        // *anchor 'rest of the line'
+        // ^
+        let kind = match buffer.as_bytes()
+        {
+            [b @ b'*', ..] | [b @ b'&', ..] =>
+            {
+                AnchorKind::new(b).expect("we only bind * or & so this cannot fail")
+            },
+            _ => return Ok(None),
+        };
+
+        advance!(buffer, 1);
+
+        // *anchor 'rest of the line'
+        //  ^^^^^^
+        let anchor = take_while(buffer.as_bytes(), u8::is_ascii_alphanumeric);
+
+        let anchor = advance!(<- buffer, anchor.len());
+
+        // anchor name cannot be empty, must contain >= 1
+        // alphanumeric character
+        if anchor.is_empty()
+        {
+            return Err(ScanError::InvalidAnchorName);
+        }
+
+        // *anchor 'rest of the line'
+        //        ^
+        // There does not necessarily need to be a whitespace so we
+        // also check against a list of valid starting
+        // tokens
+        check!(buffer.as_bytes(),
+            is b' ' | b'\n' | b'?' | b',' | b']' | b'}' | b'%' | b'@' | b'`',
+            else ScanError::InvalidAnchorName
+        )?;
+
+        let token = match kind
+        {
+            AnchorKind::Alias => Token::Alias(cow!(anchor)),
+            AnchorKind::Anchor => Token::Anchor(cow!(anchor)),
+        };
+
+        // *anchor 'rest of the line'
+        //        ^^^^^^^^^^^^^^^^^^^ buffer.len
+        // ^^^^^^^ self.buffer.len - buffer.len
+        advance!(self.buffer, self.buffer.len() - buffer.len());
+
+        Ok(Some(token))
+    }
 }
 
 impl<'a> Iterator for Scanner<'a>
@@ -320,6 +379,28 @@ impl DirectiveKind
             Self::Version => Self::V_LEN,
             Self::Tag => Self::T_LEN,
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum AnchorKind
+{
+    Anchor,
+    Alias,
+}
+
+impl AnchorKind
+{
+    pub fn new(b: &u8) -> Option<Self>
+    {
+        let s = match b
+        {
+            b'*' => Self::Alias,
+            b'&' => Self::Anchor,
+            _ => return None,
+        };
+
+        Some(s)
     }
 }
 
@@ -395,6 +476,22 @@ mod tests
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn multi_document_empty()
+    {
+        let data = "---\n---\n---";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            | Token::DocumentStart,
+            | Token::DocumentStart,
+            | Token::DocumentStart,
+            | Token::StreamEnd,
+            @ None
         );
     }
 
@@ -532,6 +629,71 @@ mod tests
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
             > Result::<Token>::Err(ScanError::UnexpectedEOF)    => "expected an eof error"
+        );
+    }
+
+    #[test]
+    fn anchor_alias()
+    {
+        let data = "*alias\n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::Alias(cow!("alias"))               => "expected an alias named 'alias'",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn anchor()
+    {
+        let data = "    &anchor     \n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::Anchor(cow!("anchor"))             => "expected an anchor named 'anchor'",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn complex_no_map_sequence_scalar()
+    {
+        let data = r##"
+
+---
+
+%YAML           1.2                     # our document's version.
+%TAG !          primary:namespace       # our doc's primary tag
+%TAG !!         secondary/namespace:    # our doc's secondary tag
+%TAG !named0!   named0:                 # A named tag
+
+&ref
+*ref
+
+
+
+...
+
+"##;
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            | Token::DocumentStart,
+            | Token::VersionDirective(1, 2),
+            | Token::TagDirective(cow!("!"), cow!("primary:namespace")),
+            | Token::TagDirective(cow!("!!"), cow!("secondary/namespace:")),
+            | Token::TagDirective(cow!("!named0!"), cow!("named0:")),
+            | Token::Anchor(cow!("ref")),
+            | Token::Alias(cow!("ref")),
+            | Token::DocumentEnd,
+            | Token::StreamEnd,
+            @ None
         );
     }
 
