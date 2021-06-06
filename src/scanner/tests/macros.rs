@@ -63,9 +63,3 @@ macro_rules! tokens {
         assert_eq!(event, $expected, $msg)
     };
 }
-
-macro_rules! cow {
-    ($literal:expr) => {
-        std::borrow::Cow::from($literal)
-    };
-}
