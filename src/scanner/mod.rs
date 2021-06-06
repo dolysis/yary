@@ -155,7 +155,7 @@ impl<'a> Scanner<'a>
     {
         let mut buffer = self.buffer;
 
-        if !buffer.starts_with('%')
+        if check!(buffer.as_bytes(), not b'%')
         {
             return Ok(None);
         }
@@ -208,7 +208,62 @@ impl<'a> Scanner<'a>
             },
             DirectiveKind::Tag =>
             {
-                todo!()
+                let mut markers = 0;
+
+                // Chomp any spaces up to the handle
+                Self::eat_whitespace(&mut buffer, false);
+
+                // %TAG !handle! tag-prefix # a comment \n
+                //      ^
+                check!(buffer.as_bytes(), is b'!', else ScanError::InvalidTagHandle)?;
+
+                markers += 1;
+
+                // %TAG !handle! tag-prefix # a comment \n
+                //       ^^^^^^
+                // Safety: we just proved above we have >= 1 byte ('!')
+                let name = take_while(buffer[1..].as_bytes(), u8::is_ascii_alphanumeric);
+
+                match buffer.as_bytes().get(markers + name.len())
+                {
+                    // %TAG !! tag-prefix # a comment \n
+                    //       ^
+                    // Either a secondary handle (!!) or named (!:alphanumeric:!)
+                    Some(b'!') => markers += 1,
+                    // %TAG ! tag-prefix # a comment \n
+                    //       ^
+                    // If no name, and no second ! this is a primary handle
+                    _ if name.is_empty() =>
+                    {},
+                    // Otherwise its an error
+                    Some(_) => Err(ScanError::InvalidTagHandle)?,
+                    None => Err(ScanError::UnexpectedEOF)?,
+                }
+
+                let handle = advance!(<- buffer, markers + name.len());
+
+                // Check that there is >= 1 whitespace between handle and
+                // prefix
+                check!(buffer.as_bytes(), is b' ', else ScanError::InvalidTagPrefix)?;
+
+                Self::eat_whitespace(&mut buffer, false);
+
+                // %TAG !named! :tag:prefix # a comment\n
+                //              ^^^^^^^^^^^
+                let prefix = match scan_directive_tag_prefix(buffer.as_bytes())
+                {
+                    [] => Err(ScanError::InvalidTagPrefix)?,
+                    prefix @ [..] => prefix,
+                };
+
+                let prefix = advance!(<- buffer, prefix.len());
+
+                // %TAG !named! tag-prefix # a comment\n
+                //                        ^
+                // Check there is whitespace or a newline after the tag
+                check!(buffer.as_bytes(), is b' ' | b'\n', else ScanError::InvalidTagPrefix)?;
+
+                Token::TagDirective(cow!(handle), cow!(prefix))
             },
         };
 
@@ -274,6 +329,26 @@ enum StreamState
     Start,
     Stream,
     Done,
+}
+
+fn scan_directive_tag_prefix(b: &[u8]) -> &[u8]
+{
+    take_while(b, valid_in_tag_prefix)
+}
+
+fn valid_in_tag_prefix(b: &u8) -> bool
+{
+    assert_ne!(*b, b'%', "FIXME: url escape decode not implemented yet!");
+
+    matches!(
+        *b,
+        // alphanumeric
+        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' |
+        // !, $, &, ', (, ), *, +, -, ., /, :, ;
+        b'!' | b'$' | b'&'..=b'/' | b':' | b';' |
+        // =, ?, @, _, ~
+        b'=' | b'?' | b'@' | b'_' | b'~'
+    )
 }
 
 fn scan_directive_version(b: &str) -> Result<(u8, usize)>
@@ -395,7 +470,7 @@ mod tests
     }
 
     #[test]
-    fn directive_version_clean_failure()
+    fn directive_version_invalid()
     {
         let data = "%YAML   foo.bar # a comment\n";
         let mut s = Scanner::new(data);
@@ -403,6 +478,60 @@ mod tests
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
             > Result::<Token>::Err(ScanError::InvalidVersion)   => "expected an version directive error"
+        );
+    }
+
+    #[test]
+    fn directive_tag_named()
+    {
+        let data = "%TAG !named! my:cool:tag # a comment\n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
+            | Token::TagDirective(cow!("!named!"), cow!("my:cool:tag")) => "expected named tag directive",
+            | Token::StreamEnd                                          => "expected end of stream",
+            @ None                                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn directive_tag_primary()
+    {
+        let data = "%TAG ! my:cool:tag\n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)              => "expected start of stream",
+            | Token::TagDirective(cow!("!"), cow!("my:cool:tag"))   => "expected primary tag directive",
+            | Token::StreamEnd                                      => "expected end of stream",
+            @ None                                                  => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn directive_tag_secondary()
+    {
+        let data = "%TAG !! @my/crazy&tag:  \n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
+            | Token::TagDirective(cow!("!!"), cow!("@my/crazy&tag:"))   => "expected secondary tag directive",
+            | Token::StreamEnd                                          => "expected end of stream",
+            @ None                                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn directive_tag_ending_ws()
+    {
+        let data = "%TAG !! @my/crazy&tag:";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            > Result::<Token>::Err(ScanError::UnexpectedEOF)    => "expected an eof error"
         );
     }
 
