@@ -27,6 +27,9 @@ pub enum ScanError
     /// or more spaces
     InvalidTagPrefix,
 
+    /// Either an anchor (*) or alias (&)'s name was invalid
+    InvalidAnchorName,
+
     /// Got end of stream while parsing a token
     UnexpectedEOF,
 }
