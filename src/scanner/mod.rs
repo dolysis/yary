@@ -236,8 +236,8 @@ impl<'a> Scanner<'a>
                     _ if name.is_empty() =>
                     {},
                     // Otherwise its an error
-                    Some(_) => Err(ScanError::InvalidTagHandle)?,
-                    None => Err(ScanError::UnexpectedEOF)?,
+                    Some(_) => return Err(ScanError::InvalidTagHandle),
+                    None => return Err(ScanError::UnexpectedEOF),
                 }
 
                 let handle = advance!(<- buffer, markers + name.len());
@@ -252,7 +252,7 @@ impl<'a> Scanner<'a>
                 //              ^^^^^^^^^^^
                 let prefix = match scan_directive_tag_prefix(buffer.as_bytes())
                 {
-                    [] => Err(ScanError::InvalidTagPrefix)?,
+                    [] => return Err(ScanError::InvalidTagPrefix),
                     prefix @ [..] => prefix,
                 };
 
