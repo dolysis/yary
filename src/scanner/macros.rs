@@ -79,9 +79,10 @@ macro_rules! check {
     };
 }
 
-macro_rules! isLineBreak {
+/// Check if the char (@offset) is a line break
+macro_rules! isBreak {
     (~ $buffer:expr $(, $offset:expr )? ) => {
-        isLineBreak!($buffer.as_bytes() $(, $offset )? )
+        isBreak!($buffer.as_bytes() $(, $offset )? )
     };
     ($buffer:expr $(, $offset:expr )? ) => {
         check!($buffer $(, $offset)? =>
@@ -91,5 +92,28 @@ macro_rules! isLineBreak {
             | [b'\xE2', b'\x80', b'\xA8', ..]       /* LS   #x2028  */
             | [b'\xE2', b'\x80', b'\xA9', ..]       /* PS   #x2029  */
         )
+    };
+}
+
+/// Check if the char (@offset) is a space or tab
+macro_rules! isBlank {
+    (~ $buffer:expr $(, $offset:expr )? ) => {
+        isBlank!($buffer.as_bytes() $(, $offset )? )
+    };
+    ($buffer:expr $(, $offset:expr )? ) => {
+        check!($buffer $(, $offset)? => b' ' | b'\t')
+    };
+}
+
+/// Check if the char (@offset) is a space, tab or line
+/// break
+macro_rules! isBlankZ {
+    (~ $buffer:expr $(, $offset:expr )? ) => {
+        isBlankZ!($buffer.as_bytes() $(, $offset )? )
+    };
+    ($buffer:expr $(, $offset:expr )? ) => {
+        isBlank!($buffer $(, $offset)?)
+            || isBreak!($buffer $(, $offset)?)
+            || check!($buffer $(, $offset)? => [])
     };
 }
