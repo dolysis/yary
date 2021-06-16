@@ -30,6 +30,13 @@ pub enum ScanError
     /// Either an anchor (*) or alias (&)'s name was invalid
     InvalidAnchorName,
 
+    /// A flow scalar was invalid for some reason
+    InvalidFlowScalar,
+
+    /// A character that was not valid for the escape
+    /// sequence was encountered
+    UnknownEscape,
+
     /// Got end of stream while parsing a token
     UnexpectedEOF,
 }
