@@ -1,6 +1,10 @@
-mod error;
+// Note that this module must come before all others, as
+// they depend on the macros which expand into this scope
 #[macro_use]
 mod macros;
+
+mod error;
+mod scalar;
 
 use atoi::atoi;
 
