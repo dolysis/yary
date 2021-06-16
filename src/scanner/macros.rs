@@ -34,38 +34,62 @@ macro_rules! cow {
 /// cased to return an UnexpectedEOF if it encounters an
 /// empty slice
 macro_rules! check {
-    ($buffer:expr, $(@$pos:expr,)? is $( $byte:pat )|+ $(, else $error:expr)? ) => {
-        {
-            let b = match $buffer$([$pos..])? {
-                [] => Err(false),
-                $([$byte, ..])|+ => Ok(true),
-                _ => Ok(false)
-            };
+    (~ $buffer:expr $(, $offset:expr )? => $( $match:tt )|+ $(, else $error:expr)? ) => {
+        check!(@priv $buffer.as_bytes() $(, $offset )? => $( $match )|+ $(, else $error)?)
+    };
 
-            check!(@priv b $(=> $error)? )
-        }
+    ($buffer:expr $(, $offset:expr )? => $( $match:tt )|+ $(, else $error:expr)? ) => {
+        check!(@priv $buffer $(, $offset )? => $( $match )|+ $(, else $error)?)
     };
-    ($buffer:expr, $(@$pos:expr,)? not $( $byte:pat )|+ $(, else $error:expr)? ) => {
-        {
-            let b = match $buffer$([$pos..])? {
-                [] => Err(true),
-                $([$byte, ..])|+ => Ok(false),
-                _ => Ok(true)
-            };
 
-            check!(@priv b $(=> $error)? )
+    /* Private variants */
+    (@priv $buffer:expr, $offset:expr => $( $match:tt )|+) => {
+        match $buffer.get($offset..) {
+            Some(buffer) => check!(@priv buffer => $( $match )|+),
+            None => false
         }
     };
-    (@priv $bool:expr) => {
-        match $bool {
-            Ok(b) | Err(b) => b
+    (@priv $buffer:expr => $( $match:tt )|+) => {
+        match $buffer {
+            $( check!(@ptn $match) )|+ => true,
+            _ => false
         }
     };
-    (@priv $bool:expr => $error:expr) => {
-        match $bool {
-            Ok(true) => Ok(()),
-            Ok(false) => Err($error),
-            Err(_) => Err($crate::scanner::error::ScanError::UnexpectedEOF),
+    (@priv $buffer:expr, $offset:expr => $( $match:tt )|+, else $error:expr) => {
+        match $buffer.get($offset..) {
+            Some(buffer) => check!(@priv buffer => $( $match )|+ else $error),
+            _ => Err($error)
         }
-    }
+    };
+    (@priv $buffer:expr => $( $match:tt )|+, else $error:expr) => {
+        match $buffer {
+            $( check!(@ptn $match) )|+ => Ok(()),
+            [] => Err($crate::scanner::error::ScanError::UnexpectedEOF),
+            _ => Err($error)
+        }
+    };
+
+    // Note we use macro path rules to first try matching the given
+    // token as a literal, e.g a b'_', then try it as a pattern
+    (@ptn $byte:literal) => {
+        [$byte, ..]
+    };
+    (@ptn $match:pat) => {
+        $match
+    };
+}
+
+macro_rules! isLineBreak {
+    (~ $buffer:expr $(, $offset:expr )? ) => {
+        isLineBreak!($buffer.as_bytes() $(, $offset )? )
+    };
+    ($buffer:expr $(, $offset:expr )? ) => {
+        check!($buffer $(, $offset)? =>
+            b'\r'                                   /* CR   #xD     */
+            | b'\n'                                 /* LF   #xA     */
+            | [b'\xC2', b'\x85', ..]                /* NEL  #x85    */
+            | [b'\xE2', b'\x80', b'\xA8', ..]       /* LS   #x2028  */
+            | [b'\xE2', b'\x80', b'\xA9', ..]       /* PS   #x2029  */
+        )
+    };
 }

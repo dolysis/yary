@@ -164,7 +164,7 @@ impl<'a> Scanner<'a>
     {
         let mut buffer = self.buffer;
 
-        if check!(buffer.as_bytes(), not b'%')
+        if !check!(~buffer => b'%')
         {
             return Ok(None);
         }
@@ -224,7 +224,7 @@ impl<'a> Scanner<'a>
 
                 // %TAG !handle! tag-prefix # a comment \n
                 //      ^
-                check!(buffer.as_bytes(), is b'!', else ScanError::InvalidTagHandle)?;
+                check!(~buffer => b'!', else ScanError::InvalidTagHandle)?;
 
                 markers += 1;
 
@@ -253,7 +253,7 @@ impl<'a> Scanner<'a>
 
                 // Check that there is >= 1 whitespace between handle and
                 // prefix
-                check!(buffer.as_bytes(), is b' ', else ScanError::InvalidTagPrefix)?;
+                check!(~buffer => b' ', else ScanError::InvalidTagPrefix)?;
 
                 Self::eat_whitespace(&mut buffer, false);
 
@@ -270,7 +270,7 @@ impl<'a> Scanner<'a>
                 // %TAG !named! tag-prefix # a comment\n
                 //                        ^
                 // Check there is whitespace or a newline after the tag
-                check!(buffer.as_bytes(), is b' ' | b'\n', else ScanError::InvalidTagPrefix)?;
+                check!(~buffer => b' ' | b'\n', else ScanError::InvalidTagPrefix)?;
 
                 Token::TagDirective(cow!(handle), cow!(prefix))
             },
@@ -319,8 +319,9 @@ impl<'a> Scanner<'a>
         // There does not necessarily need to be a whitespace so we
         // also check against a list of valid starting
         // tokens
-        check!(buffer.as_bytes(),
-            is b' ' | b'\n' | b'?' | b',' | b']' | b'}' | b'%' | b'@' | b'`',
+
+        check!(~buffer
+            => b' ' | b'\n' | b'?' | b',' | b']' | b'}' | b'%' | b'@' | b'`',
             else ScanError::InvalidAnchorName
         )?;
 
