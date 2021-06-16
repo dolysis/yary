@@ -1,17 +1,25 @@
 /// Moves head in $buffer $amount forward
 macro_rules! advance {
-    ($buffer:expr, $amount:expr) => {
+    ($buffer:expr, $amount:expr $(, $var:ident )? ) => {
         let (_, rest) = $buffer.split_at($amount);
+
+        $( advance!(@update $var, $amount); )?
 
         $buffer = rest
     };
-    (<- $buffer:expr, $amount:expr) => {{
+    (<- $buffer:expr, $amount:expr $(, $var:ident )? ) => {{
         let (cut, rest) = $buffer.split_at($amount);
 
         $buffer = rest;
 
+        $( advance!(@update $var, $amount) )?
+
         cut
     }};
+
+    (@update $( $var:ident, $amount:expr)? ) => {
+          $({ $var += $amount } )?
+    };
 }
 
 /// New cow pointer from the given expr
