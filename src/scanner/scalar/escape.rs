@@ -1,11 +1,21 @@
+//! This module exports function(s) for handling scalar
+//! escapes in YAML documents.
+
 use crate::scanner::error::{ScanError, ScanResult as Result};
 
-const NEL: [u8; 2] = [b'\xC2', b'\x85'];
-const NBS: [u8; 2] = [b'\xC2', b'\xA0'];
-const LS: [u8; 3] = [b'\xE2', b'\x80', b'\xA8'];
-const PS: [u8; 3] = [b'\xE2', b'\x80', b'\xA9'];
-
-fn flow_double_unescape<'b, 'c>(base: &'b str, scratch: &'c mut Vec<u8>) -> Result<usize>
+/// Unescape a given YAML escape sequence as defined in
+/// [Section 5.7][Link]. Specifically, YAML defines 18
+/// 'special' escapes, and 3 methods of encoding 8, 16 and
+/// 32 bit unicode points.
+///
+/// It writes the unescaped character to .scratch, returning
+/// the length of .buffer advanced, or an error if the
+/// escape sequence is invalid. It expects .buffer->0 is a
+/// backslash (\\), as this is the only valid start of an
+/// escape sequence.
+///
+/// [Link]: https://yaml.org/spec/1.2/spec.html#c-escape
+pub(super) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
 {
     let mut buffer = base;
     let mut escape_len: Option<u8> = None;
@@ -77,13 +87,16 @@ fn write_unicode_point<'b, 'c>(
     {
         match buffer.as_bytes().first()
         {
-            Some(c) if !c.is_ascii_hexdigit() => return Err(ScanError::UnknownEscape),
             None => return Err(ScanError::UnexpectedEOF),
+            Some(c) if !c.is_ascii_hexdigit() => return Err(ScanError::UnknownEscape),
+
             Some(b) => value = (value << 4) + as_hex(*b),
         }
         advance!(buffer, 1, i);
     }
 
+    // Bit shift the value into the correct byte configuration
+    // for UTF8
     match value
     {
         // v <= 127 (ASCII)
@@ -91,20 +104,20 @@ fn write_unicode_point<'b, 'c>(
         // v <= 2047
         v if v <= 0x7FF =>
         {
-            scratch.extend_from_slice(&[0xC0 + (v >> 6) as u8, 0x80 + (value & 0x3F) as u8])
+            scratch.extend_from_slice(&[0xC0 | (v >> 6) as u8, 0x80 | (v & 0x3F) as u8])
         },
         // v <= 65535
         v if v <= 0xFFFF => scratch.extend_from_slice(&[
-            0xE0 + (v >> 12) as u8,
-            0x80 + ((v >> 6) & 0x3F) as u8,
-            0x80 + (v & 0x3F) as u8,
+            0xE0 | (v >> 12) as u8,
+            0x80 | ((v >> 6) & 0x3F) as u8,
+            0x80 | (v & 0x3F) as u8,
         ]),
         // Otherwise it must be a full 4 byte code point
         v => scratch.extend_from_slice(&[
-            0xF0 + (v >> 18) as u8,
-            0x80 + ((v >> 12) & 0x3F) as u8,
-            0x80 + ((v >> 6) & 0x3F) as u8,
-            0x80 + (v & 0x3F) as u8,
+            0xF0 | (v >> 18) as u8,
+            0x80 | ((v >> 12) & 0x3F) as u8,
+            0x80 | ((v >> 6) & 0x3F) as u8,
+            0x80 | (v & 0x3F) as u8,
         ]),
     }
 
@@ -130,6 +143,15 @@ fn as_hex(b: u8) -> u32
     ret as u32
 }
 
+/// <Next Line> (U+0085)
+const NEL: [u8; 2] = [b'\xC2', b'\x85'];
+/// <No-Break Space> (U+00A0)
+const NBS: [u8; 2] = [b'\xC2', b'\xA0'];
+/// <Line Separator> (U+2028)
+const LS: [u8; 3] = [b'\xE2', b'\x80', b'\xA8'];
+/// <Paragraph Separator> (U+2029)
+const PS: [u8; 3] = [b'\xE2', b'\x80', b'\xA9'];
+
 #[cfg(test)]
 mod tests
 {
@@ -141,7 +163,7 @@ mod tests
     type TestResult = anyhow::Result<()>;
 
     #[test]
-    fn flow_d_escape_special() -> TestResult
+    fn flow_escape_special() -> TestResult
     {
         let mut s = Vec::new();
         let scratch = &mut s;
@@ -181,7 +203,7 @@ mod tests
         for (i, (&t, &ex)) in data.into_iter().zip(expected).enumerate()
         {
             scratch.clear();
-            flow_double_unescape(t, scratch)
+            flow_unescape(t, scratch)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
             assert_eq!(scratch, ex, "on iteration {}", i)
@@ -191,12 +213,45 @@ mod tests
     }
 
     #[test]
-    fn flow_d_escape_hex() -> TestResult
+    fn flow_escape_hex() -> TestResult
     {
         let mut s = Vec::new();
         let scratch = &mut s;
-        let data = &[r#"\x64"#];
-        let expected: &[&[u8]] = &[&[100]];
+        #[rustfmt::skip]
+        let data = &[
+                                // === 1 byte
+            r#"\x64"#,          // 0
+            r#"\x65"#,          // 1
+                                // === 2 bytes
+            r#"\x7f"#,          // 2
+            r#"\xF7"#,          // 3
+            r#"\xB6"#,          // 4
+            r#"\xFF"#,          // 5
+            r#"\xC6"#,          // 6
+            r#"\u2c61"#,        // 7
+            r#"\u30C4"#,        // 8
+            r#"\ua026"#,        // 9
+                                // === 4 bytes
+            r#"\U000111E1"#,    // 10
+        ];
+        #[rustfmt::skip]
+        let expected = &[
+                                // === 1 byte
+            'd',                // 0
+            'e',                // 1
+                                // === 2 bytes
+            '\u{7f}',           // 2
+            '÷',                // 3
+            '¶',                // 4
+            'ÿ',                // 5
+            'Æ',                // 6
+                                // === 3 bytes
+            'ⱡ',                // 7
+            'ツ',               // 8
+            'ꀦ',               // 9
+                                // === 4 bytes
+            '𑇡'                 // 10
+        ];
 
         assert_eq!(
             data.len(),
@@ -206,11 +261,61 @@ mod tests
 
         for (i, (&t, &ex)) in data.into_iter().zip(expected).enumerate()
         {
+            let mut c: [u8; 4] = [0; 4];
             scratch.clear();
-            flow_double_unescape(t, scratch)
+
+            flow_unescape(t, scratch)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
-            assert_eq!(scratch, ex, "on iteration {}", i)
+            assert_eq!(
+                scratch,
+                ex.encode_utf8(&mut c).as_bytes(),
+                "on iteration {}, codepoint '{}'",
+                i,
+                ex
+            )
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_escape_consumed() -> TestResult
+    {
+        let mut s = Vec::new();
+        let scratch = &mut s;
+        let data = &[
+            // === 1 byte
+            r#"\x64"#, // 0
+            r#"\x65"#, // 1
+            // === 2 bytes
+            r#"\x7f"#,   // 2
+            r#"\xF7"#,   // 3
+            r#"\xB6"#,   // 4
+            r#"\xFF"#,   // 5
+            r#"\xC6"#,   // 6
+            r#"\u2c61"#, // 7
+            r#"\u30C4"#, // 8
+            r#"\ua026"#, // 9
+            // === 4 bytes
+            r#"\U000111E1"#, // 10
+        ];
+
+        for (i, &t) in data.into_iter().enumerate()
+        {
+            scratch.clear();
+
+            let consumed = flow_unescape(t, scratch)
+                .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
+
+            assert_eq!(
+                consumed,
+                t.len(),
+                "on iteration {}, expected to consume {}, got {}",
+                i,
+                t.len(),
+                consumed
+            )
         }
 
         Ok(())
