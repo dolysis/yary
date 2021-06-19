@@ -117,3 +117,61 @@ macro_rules! isBlankZ {
             || check!($buffer $(, $offset)? => [])
     };
 }
+
+#[cfg(test)]
+mod tests
+{
+    #![allow(non_snake_case)]
+
+    #[test]
+    fn scanner_macro_isBreak()
+    {
+        let data = BREAK_CHARS;
+
+        for brk in &data
+        {
+            let mut c = [0; 4];
+            let b = brk.encode_utf8(&mut c);
+
+            let test = dbg!(isBreak!(~b), isBreak!(b.as_bytes()));
+
+            assert!(test.0 && test.1);
+        }
+    }
+
+    #[test]
+    fn scanner_macro_isBlank()
+    {
+        let data = BLANK_CHARS;
+
+        for brk in &data
+        {
+            let mut c = [0; 4];
+            let b = brk.encode_utf8(&mut c);
+
+            let test = dbg!(isBlank!(~b), isBlank!(b.as_bytes()));
+
+            assert!(test.0 && test.1);
+        }
+    }
+
+    #[test]
+    fn scanner_macro_isBlankZ()
+    {
+        let data: [&[char]; 3] = [&BLANK_CHARS, &BREAK_CHARS, &END_OF_FILE];
+
+        for brk in data.iter().flat_map(|a| *a)
+        {
+            let mut c = [0; 4];
+            let b = brk.encode_utf8(&mut c);
+
+            let test = dbg!(isBlankZ!(~b), isBlankZ!(b.as_bytes()));
+
+            assert!(test.0 && test.1);
+        }
+    }
+
+    const BREAK_CHARS: [char; 5] = ['\r', '\n', '\u{0085}', '\u{2028}', '\u{2029}'];
+    const BLANK_CHARS: [char; 2] = [' ', '\t'];
+    const END_OF_FILE: [char; 0] = [];
+}
