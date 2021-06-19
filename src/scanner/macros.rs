@@ -1,4 +1,15 @@
-/// Moves head in $buffer $amount forward
+//! This module contains the various macros used by
+//! lib/scanner.
+
+/// Rebinds .buffer's binding .amount forward, optionally
+/// taking a .var to add .amount to
+///
+/// Modifiers
+///     <- .buffer := return .buffer->0...amount
+///
+/// Variants
+///     /1 .buffer, .amount
+///     /2 .buffer, .amount, .var
 macro_rules! advance {
     ($buffer:expr, $amount:expr $(, $var:ident )? ) => {
         let (_, rest) = $buffer.split_at($amount);
@@ -29,10 +40,23 @@ macro_rules! cow {
     };
 }
 
-/// Check the buffer for $byte matches at $pos, optionally
-/// returning an error Note that the error path is special
-/// cased to return an UnexpectedEOF if it encounters an
-/// empty slice
+/// Check the .buffer (@ .offset) matches the given
+/// .pattern, optionally returning an .error.
+///
+/// Note that the error path is special cased to return an
+/// UnexpectedEOF if it encounters an empty slice, although
+/// this can be overridden by expressly including an empty
+/// pattern ([]) in your .pattern
+///
+/// Modifiers
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants
+///     /1 .buffer => .pattern := /2 .buffer, 0 => .pattern
+///     /2 .buffer, .offset => .pattern
+///     /3 .buffer => .pattern, else .error
+///             := /4 .buffer, 0 => .pattern else .error
+///     /4 .buffer, .offset => .pattern, else .error
 macro_rules! check {
     (~ $buffer:expr $(, $offset:expr )? => $( $match:tt )|+ $(, else $error:expr)? ) => {
         check!(@priv $buffer.as_bytes() $(, $offset )? => $( $match )|+ $(, else $error)?)
@@ -79,7 +103,14 @@ macro_rules! check {
     };
 }
 
-/// Check if the char (@offset) is a line break
+/// Check if the byte (@ .offset) is a line break
+///
+/// Modifiers
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
 macro_rules! isBreak {
     (~ $buffer:expr $(, $offset:expr )? ) => {
         isBreak!($buffer.as_bytes() $(, $offset )? )
@@ -95,7 +126,14 @@ macro_rules! isBreak {
     };
 }
 
-/// Check if the char (@offset) is a space or tab
+/// Check if the byte (@ .offset) is a space or tab
+///
+/// Modifiers:
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants:
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
 macro_rules! isBlank {
     (~ $buffer:expr $(, $offset:expr )? ) => {
         isBlank!($buffer.as_bytes() $(, $offset )? )
@@ -105,8 +143,15 @@ macro_rules! isBlank {
     };
 }
 
-/// Check if the char (@offset) is a space, tab or line
-/// break
+/// Check if the byte (@ .offset) is a space, tab, line
+/// break or if .buffer is empty
+///
+/// Modifiers:
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants:
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
 macro_rules! isBlankZ {
     (~ $buffer:expr $(, $offset:expr )? ) => {
         isBlankZ!($buffer.as_bytes() $(, $offset )? )
