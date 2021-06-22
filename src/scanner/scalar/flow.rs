@@ -3,8 +3,6 @@ use crate::{
     token::{ScalarStyle, Token},
 };
 
-const SINGLE: u8 = b'\'';
-
 fn scan_flow_scalar_single_quote<'b, 'c>(
     base: &'b str,
     scratch: &'c mut Vec<u8>,
@@ -46,61 +44,106 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
             // from .base, we must unescape the quote into .scratch
             if check!(~buffer => [SINGLE, SINGLE, ..])
             {
-                can_borrow = false;
+                set_no_borrow(&mut can_borrow, base, buffer, scratch);
 
                 scratch.push(SINGLE);
                 advance!(buffer, 2);
             }
-
             // We're done, we hit the right quote
-            if check!(~buffer => [SINGLE, ..])
+            else if check!(~buffer => [SINGLE, ..])
             {
                 break 'scalar;
             }
-
             // Its a non blank character, add it
-            if !can_borrow
+            else
             {
-                // Safety: isBlankZ guarantees the slice is not empty
-                scratch.push(buffer.as_bytes()[0])
+                if !can_borrow
+                {
+                    // Safety: !isBlankZ guarantees the slice is not empty
+                    scratch.push(buffer.as_bytes()[0])
+                }
+                advance!(buffer, 1);
             }
-            advance!(buffer, 1);
         }
+
+        // let mut join = None;
+        let mut whitespace: usize = 0;
+        let mut lines: usize = 0;
+
+        #[rustfmt::skip]
+        /*
+         * The YAML spec goes over the rules for quoted scalar line joining in Section
+         * 7.3.1 and 7.3.2. In short, on hitting a LINEBREAK, discard all trailing
+         * whitespace on the current line, discard any leading whitespace on the next
+         * line and if a non WHITESPACE character exists on the next line, append a space
+         * (\x20) else append a newline (\x0A).
+         *
+         * The rules change slightly for escaped line breaks in double quoted scalars,
+         * that is the character sequence: [\, LINEBREAK]. In this case, we keep any
+         * trailing whitespace, still discard leading whitespace, do not append a
+         * space, but still append newline if required.
+         *
+         * yaml.org/spec/1.2/spec.html#style/flow/double-quoted
+         */
+        let _ = ();
 
         // Consume whitespace
         loop
         {
             match (isBlank!(~buffer), isBreak!(~buffer))
             {
+                // No more whitespace, exit loop
                 (false, false) => break,
+                // Handle blanks
                 (true, _) =>
                 {
                     if !can_borrow
                     {
-                        scratch.push(buffer.as_bytes()[0])
+                        whitespace += 1;
+                        scratch.push(buffer.as_bytes()[0]);
                     }
                     advance!(buffer, 1);
                 },
+                // Handle line breaks
                 (false, _) =>
                 {
-                    // need to handle potential joins
-                    // e.g ===================
-                    //  'a                  'a
-                    //   b                   b
-                    //   c
-                    //   d'                  c'
-                    //   -> 'a b c d'        -> 'a b \nc'
-                    //
-                    // Seems like the rule here is that if
-                    // line consists solely of a break we
-                    // add it literally,
-                    // otherwise we eat blanks
-                    // until we find a char
-                    unimplemented!(
-                        "handling of line breaks in flow scalars is not implemented yet!"
-                    )
+                    set_no_borrow(&mut can_borrow, base, buffer, scratch);
+
+                    lines += 1;
+                    advance!(buffer, 1);
                 },
             }
+        }
+
+        // Check if we need to handle a line join
+        match lines
+        {
+            // No join needed, we're done
+            0 =>
+            {},
+            // If a single line was recorded, we _cannot_ have seen a line wholly made of
+            // whitespace, therefore join via a space
+            1 =>
+            {
+                set_no_borrow(&mut can_borrow, base, buffer, scratch);
+
+                scratch.truncate(scratch.len() - whitespace);
+
+                scratch.push(SPACE);
+            },
+            // Else we need to append (n - 1) newlines, as we skip the origin line's break
+            n =>
+            {
+                set_no_borrow(&mut can_borrow, base, buffer, scratch);
+
+                scratch.truncate(scratch.len() - whitespace);
+
+                // Safety: we can only reach this branch if n > 1
+                for _ in 0..n - 1
+                {
+                    scratch.push(NEWLINE)
+                }
+            },
         }
     }
 
@@ -112,7 +155,7 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
         // way can get to this section is:
         //
         // 1. .base->0 must be a quote
-        // 2. .base->.buffer.len() - 1 must be a quote
+        // 2. .base->.base.len() - buffer.len() must be a quote
         // 3. .base must be valid UTF8 (its a str)
         let fragment = base.get(1..base.len() - buffer.len()).unwrap();
         let token = Token::Scalar(cow!(fragment), ScalarStyle::SingleQuote);
@@ -139,6 +182,19 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
     Ok((token, advance))
 }
 
+// Handles the trap door from borrowing to copying
+fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut Vec<u8>)
+{
+    if *can_borrow
+    {
+        // Note we start from 1 here to account for the quote
+        // character
+        scratch.extend_from_slice(base[1..base.len() - buffer.len()].as_bytes());
+    }
+
+    *can_borrow = false
+}
+
 /// This allows us to discriminate between a Token with
 /// different lifetimes, specifically either a lifetime
 /// 'borrow-ed from the underlying data or 'copy-ied from
@@ -149,6 +205,10 @@ pub enum Ref<'borrow, 'copy>
     Borrow(Token<'borrow>),
     Copy(Token<'copy>),
 }
+
+const SINGLE: u8 = b'\'';
+const SPACE: u8 = b' ';
+const NEWLINE: u8 = b'\n';
 
 #[cfg(test)]
 mod tests
@@ -193,6 +253,49 @@ mod tests
         if !(scalar == expected)
         {
             bail!("expected\n{:?}\nbut got\n{:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_single_fold_lines() -> TestResult
+    {
+        let data = r#"'first
+            second
+            third
+fourth'"#;
+        let scratch = &mut Vec::new();
+        let cmp = "first second third fourth";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
+
+        let (scalar, _read) = scan_flow_scalar_single_quote(data, scratch)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_single_fold_newline() -> TestResult
+    {
+        let data = r#"'first
+            second
+        third
+
+            fourth'"#;
+        let scratch = &mut Vec::new();
+        let cmp = "first second third\nfourth";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
+
+        let (scalar, _read) = scan_flow_scalar_single_quote(data, scratch)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
         }
 
         Ok(())
