@@ -1,21 +1,35 @@
 use crate::{
-    scanner::error::{ScanError, ScanResult as Result},
+    scanner::{
+        error::{ScanError, ScanResult as Result},
+        scalar::escape::flow_unescape,
+    },
     token::{ScalarStyle, Token},
 };
 
-fn scan_flow_scalar_single_quote<'b, 'c>(
+pub(super) fn scan_flow_scalar<'b, 'c>(
     base: &'b str,
     scratch: &'c mut Vec<u8>,
+    single: bool,
 ) -> Result<(Ref<'b, 'c>, usize)>
 {
+    use ScalarStyle::{DoubleQuote, SingleQuote};
+
     let mut buffer = base;
     let mut can_borrow = true;
+    let mut escaped_break;
+    let kind = match single
+    {
+        true => SingleQuote,
+        false => DoubleQuote,
+    };
 
     // Eat left quote
     advance!(buffer, 1);
 
     'scalar: loop
     {
+        escaped_break = None;
+
         // Even in a scalar context, YAML prohibits starting a line
         // with document stream tokens followed by a blank
         // character
@@ -31,7 +45,7 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
             return Err(ScanError::InvalidFlowScalar);
         }
 
-        // EOF without a ' is an error
+        // EOF without a quote is an error
         if buffer.is_empty()
         {
             return Err(ScanError::UnexpectedEOF);
@@ -42,7 +56,7 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
         {
             // if we encounter an escaped quote we can no longer borrow
             // from .base, we must unescape the quote into .scratch
-            if check!(~buffer => [SINGLE, SINGLE, ..])
+            if kind == SingleQuote && check!(~buffer => [SINGLE, SINGLE, ..])
             {
                 set_no_borrow(&mut can_borrow, base, buffer, scratch);
 
@@ -50,9 +64,28 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
                 advance!(buffer, 2);
             }
             // We're done, we hit the right quote
-            else if check!(~buffer => [SINGLE, ..])
+            else if (kind == SingleQuote && check!(~buffer => [SINGLE, ..]))
+                || (kind == DoubleQuote && check!(~buffer => [DOUBLE, ..]))
             {
                 break 'scalar;
+            }
+            // We're going to hit an escaped newline, prep the whitespace loop
+            else if kind == DoubleQuote
+                && check!(~buffer => [BACKSLASH, ..])
+                && isBreak!(~buffer, 1)
+            {
+                set_no_borrow(&mut can_borrow, base, buffer, scratch);
+
+                escaped_break = Some(EscapeState::Start);
+                advance!(buffer, 1);
+            }
+            // We've hit an escape sequence, parse it
+            else if kind == DoubleQuote && check!(~buffer => [BACKSLASH, ..])
+            {
+                set_no_borrow(&mut can_borrow, base, buffer, scratch);
+
+                let read = flow_unescape(buffer, scratch)?;
+                advance!(buffer, read);
             }
             // Its a non blank character, add it
             else
@@ -66,7 +99,6 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
             }
         }
 
-        // let mut join = None;
         let mut whitespace: usize = 0;
         let mut lines: usize = 0;
 
@@ -109,6 +141,14 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
                 {
                     set_no_borrow(&mut can_borrow, base, buffer, scratch);
 
+                    if let Some(EscapeState::Start) = escaped_break
+                    {
+                        // Reset .whitespace as we keep trailing whitespace for
+                        // escaped line breaks
+                        whitespace = 0;
+                        escaped_break = Some(EscapeState::Started)
+                    }
+
                     lines += 1;
                     advance!(buffer, 1);
                 },
@@ -129,7 +169,10 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
 
                 scratch.truncate(scratch.len() - whitespace);
 
-                scratch.push(SPACE);
+                if escaped_break.is_none()
+                {
+                    scratch.push(SPACE);
+                }
             },
             // Else we need to append (n - 1) newlines, as we skip the origin line's break
             n =>
@@ -155,10 +198,10 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
         // way can get to this section is:
         //
         // 1. .base->0 must be a quote
-        // 2. .base->.base.len() - buffer.len() must be a quote
+        // 2. .base->.base.len() - .buffer.len() must be a quote
         // 3. .base must be valid UTF8 (its a str)
-        let fragment = base.get(1..base.len() - buffer.len()).unwrap();
-        let token = Token::Scalar(cow!(fragment), ScalarStyle::SingleQuote);
+        let fragment = &base[1..base.len() - buffer.len()];
+        let token = Token::Scalar(cow!(fragment), kind);
 
         Ref::Borrow(token)
     }
@@ -169,7 +212,7 @@ fn scan_flow_scalar_single_quote<'b, 'c>(
         // A. added from a str (.base)
         // B. Unescaped into valid UTF8
         let fragment = std::str::from_utf8(scratch).unwrap();
-        let token = Token::Scalar(cow!(fragment), ScalarStyle::SingleQuote);
+        let token = Token::Scalar(cow!(fragment), kind);
 
         Ref::Copy(token)
     };
@@ -206,9 +249,18 @@ pub enum Ref<'borrow, 'copy>
     Copy(Token<'copy>),
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum EscapeState
+{
+    Start,
+    Started,
+}
+
 const SINGLE: u8 = b'\'';
+const DOUBLE: u8 = b'"';
 const SPACE: u8 = b' ';
 const NEWLINE: u8 = b'\n';
+const BACKSLASH: u8 = b'\\';
 
 #[cfg(test)]
 mod tests
@@ -220,6 +272,8 @@ mod tests
 
     type TestResult = anyhow::Result<()>;
 
+    /* ====== SINGLE QUOTED TESTS ====== */
+
     #[test]
     fn flow_single_empty() -> TestResult
     {
@@ -227,7 +281,7 @@ mod tests
         let scratch = &mut Vec::new();
         let expected = Ref::Borrow(Token::Scalar(cow!(""), ScalarStyle::SingleQuote));
 
-        let (scalar, read) = scan_flow_scalar_single_quote(data, scratch)?;
+        let (scalar, read) = scan_flow_scalar(data, scratch, true)?;
 
         assert_eq!(read, 2);
 
@@ -246,7 +300,7 @@ mod tests
         let scratch = &mut Vec::new();
         let expected = Ref::Borrow(Token::Scalar(cow!("hello world"), ScalarStyle::SingleQuote));
 
-        let (scalar, read) = scan_flow_scalar_single_quote(data, scratch)?;
+        let (scalar, read) = scan_flow_scalar(data, scratch, true)?;
 
         assert_eq!(read, 13);
 
@@ -269,7 +323,7 @@ fourth'"#;
         let cmp = "first second third fourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
 
-        let (scalar, _read) = scan_flow_scalar_single_quote(data, scratch)?;
+        let (scalar, _read) = scan_flow_scalar(data, scratch, true)?;
 
         if !(scalar == expected)
         {
@@ -291,7 +345,7 @@ fourth'"#;
         let cmp = "first second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
 
-        let (scalar, _read) = scan_flow_scalar_single_quote(data, scratch)?;
+        let (scalar, _read) = scan_flow_scalar(data, scratch, true)?;
 
         if !(scalar == expected)
         {
@@ -310,7 +364,7 @@ fourth'"#;
 
         for (i, &t) in (&data).into_iter().enumerate()
         {
-            match scan_flow_scalar_single_quote(t, scratch)
+            match scan_flow_scalar(t, scratch, true)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -334,7 +388,7 @@ fourth'"#;
 
         for (i, &t) in (&data).into_iter().enumerate()
         {
-            match scan_flow_scalar_single_quote(t, scratch)
+            match scan_flow_scalar(t, scratch, true)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -347,5 +401,139 @@ fourth'"#;
                 ),
             }
         }
+    }
+
+    /* ====== DOUBLE QUOTED TESTS ====== */
+
+    #[test]
+    fn flow_double_empty() -> TestResult
+    {
+        let data = r#""""#;
+        let scratch = &mut Vec::new();
+        let expected = Ref::Borrow(Token::Scalar(cow!(""), ScalarStyle::DoubleQuote));
+
+        let (scalar, read) = scan_flow_scalar(data, scratch, false)?;
+
+        assert_eq!(read, 2);
+
+        if !(scalar == expected)
+        {
+            bail!("expected\n{:?}\nbut got\n{:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_double_simple() -> TestResult
+    {
+        let data = r#""hello world""#;
+        let scratch = &mut Vec::new();
+        let expected = Ref::Borrow(Token::Scalar(cow!("hello world"), ScalarStyle::DoubleQuote));
+
+        let (scalar, read) = scan_flow_scalar(data, scratch, false)?;
+
+        assert_eq!(read, 13);
+
+        if !(scalar == expected)
+        {
+            bail!("expected\n{:?}\nbut got\n{:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_double_unicode_escape() -> TestResult
+    {
+        let data = r#""hello \U000003B1 \u03A9 \u30C3""#;
+        let scratch = &mut Vec::new();
+        let expected = Ref::Copy(Token::Scalar(
+            cow!("hello α Ω ッ"),
+            ScalarStyle::DoubleQuote,
+        ));
+
+        let (scalar, read) = scan_flow_scalar(data, scratch, false)?;
+
+        if !(scalar == expected)
+        {
+            bail!("expected\n{:?}\nbut got\n{:?}", expected, &scalar)
+        }
+
+        assert_eq!(
+            read,
+            data.len(),
+            "expected to {} bytes, but got {}",
+            data.len(),
+            read
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_double_fold_lines() -> TestResult
+    {
+        let data = r#""first
+            second
+            third
+fourth""#;
+        let scratch = &mut Vec::new();
+        let cmp = "first second third fourth";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
+
+        let (scalar, _read) = scan_flow_scalar(data, scratch, false)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_double_fold_newline() -> TestResult
+    {
+        let data = r#""first
+            second
+        third
+
+            fourth""#;
+        let scratch = &mut Vec::new();
+        let cmp = "first second third\nfourth";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
+
+        let (scalar, _read) = scan_flow_scalar(data, scratch, false)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_double_escape_newline() -> TestResult
+    {
+        let data = r#""fi\
+rst  \
+            second
+        third
+
+            fourth""#;
+        let scratch = &mut Vec::new();
+        let cmp = "first  second third\nfourth";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
+
+        let (scalar, _read) = scan_flow_scalar(data, scratch, false)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
     }
 }
