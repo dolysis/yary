@@ -70,7 +70,7 @@ macro_rules! check {
     (@priv $buffer:expr, $offset:expr => $( $match:tt )|+) => {
         match $buffer.get($offset..) {
             Some(buffer) => check!(@priv buffer => $( $match )|+),
-            None => false
+            None => check!(@eofck $( $match )|+ )
         }
     };
     (@priv $buffer:expr => $( $match:tt )|+) => {
@@ -82,7 +82,8 @@ macro_rules! check {
     (@priv $buffer:expr, $offset:expr => $( $match:tt )|+, else $error:expr) => {
         match $buffer.get($offset..) {
             Some(buffer) => check!(@priv buffer => $( $match )|+ else $error),
-            _ => Err($error)
+            None if check!(@eofck $( $match )|+ ) => Ok(())
+            _ => Err($crate::scanner::error::ScanError::UnexpectedEOF)
         }
     };
     (@priv $buffer:expr => $( $match:tt )|+, else $error:expr) => {
@@ -100,6 +101,28 @@ macro_rules! check {
     };
     (@ptn $match:pat) => {
         $match
+    };
+
+    // When indexing to an out of bounds .offset, we mostly want
+    // to return false, however if the caller is checking for an
+    // out of bounds (e.g a [] pattern) we must special case this
+    // and return true
+    (@eofck $( $match:tt )|+) => {{
+        #[allow(unused_mut)]
+        let mut checking_newline = false;
+        $( check!(@eofck &mut checking_newline, $match); )+
+
+        checking_newline
+    }};
+    // _If and only if_ there is an empty slice pattern, set
+    // checking_newline to true as the caller wants to positively
+    // check for EOF
+    (@eofck $is_checking:expr, []) => {
+        *$is_checking = true
+    };
+    (@eofck $is_checking:expr, $_:literal) => {
+    };
+    (@eofck $is_checking:expr, $_:pat) => {
     };
 }
 
@@ -185,6 +208,23 @@ mod tests
     }
 
     #[test]
+    fn scanner_macro_isBreak_offset()
+    {
+        let data = BREAK_CHARS;
+
+        for brk in &data
+        {
+            let mut c = [0; 8];
+            brk.encode_utf8(&mut c[4..]);
+            let b = std::str::from_utf8(&c).expect("valid UTF8");
+
+            let test = dbg!(isBreak!(~b, 4), isBreak!(b.as_bytes(), 4));
+
+            assert!(test.0 && test.1);
+        }
+    }
+
+    #[test]
     fn scanner_macro_isBlank()
     {
         let data = BLANK_CHARS;
@@ -201,9 +241,26 @@ mod tests
     }
 
     #[test]
+    fn scanner_macro_isBlank_offset()
+    {
+        let data = BLANK_CHARS;
+
+        for brk in &data
+        {
+            let mut c = [0; 8];
+            brk.encode_utf8(&mut c[4..]);
+            let b = std::str::from_utf8(&c).expect("valid UTF8");
+
+            let test = dbg!(isBlank!(~b, 4), isBlank!(b.as_bytes(), 4));
+
+            assert!(test.0 && test.1);
+        }
+    }
+
+    #[test]
     fn scanner_macro_isBlankZ()
     {
-        let data: [&[char]; 3] = [&BLANK_CHARS, &BREAK_CHARS, &END_OF_FILE];
+        let data: [&[char]; 2] = [&BLANK_CHARS, &BREAK_CHARS];
 
         for brk in data.iter().flat_map(|a| *a)
         {
@@ -214,9 +271,37 @@ mod tests
 
             assert!(test.0 && test.1);
         }
+
+        let empty = "";
+
+        let test = dbg!((isBlankZ!(~empty), isBlankZ!(empty.as_bytes())));
+
+        assert!(test.0 && test.1);
+    }
+
+    #[test]
+    fn scanner_macro_isBlankZ_offset()
+    {
+        let data: [&[char]; 2] = [&BLANK_CHARS, &BREAK_CHARS];
+
+        for brk in data.iter().flat_map(|a| *a)
+        {
+            let mut c = [0; 8];
+            brk.encode_utf8(&mut c[4..]);
+            let b = std::str::from_utf8(&c).expect("valid UTF8");
+
+            let test = dbg!(isBlankZ!(~b, 4), isBlankZ!(b.as_bytes(), 4));
+
+            assert!(test.0 && test.1);
+        }
+
+        let empty = "    ";
+
+        let test = dbg!((isBlankZ!(~empty, 5), isBlankZ!(empty.as_bytes(), 5)));
+
+        assert!(test.0 && test.1);
     }
 
     const BREAK_CHARS: [char; 5] = ['\r', '\n', '\u{0085}', '\u{2028}', '\u{2029}'];
     const BLANK_CHARS: [char; 2] = [' ', '\t'];
-    const END_OF_FILE: [char; 0] = [];
 }
