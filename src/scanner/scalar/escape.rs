@@ -68,11 +68,7 @@ pub(super) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
 }
 
 /// Writes a UTF8 codepoint to the scratch space
-fn write_unicode_point<'b, 'c>(
-    base: &'b str,
-    scratch: &'c mut Vec<u8>,
-    codepoint_len: u8,
-) -> Result<usize>
+fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> Result<usize>
 {
     let mut buffer = base;
     let mut i = 0;
@@ -124,6 +120,13 @@ fn write_unicode_point<'b, 'c>(
     Ok(codepoint_len as usize)
 }
 
+/*
+ * Inclusive range suggested by clippy here is 5-10%
+ * slower than doing it by hand, see
+ *
+ * github.com/rust-lang/rust/issues/45222
+ */
+#[allow(clippy::manual_range_contains)]
 #[inline]
 fn as_hex(b: u8) -> u32
 {
