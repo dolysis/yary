@@ -49,6 +49,90 @@ pub enum Token<'a>
     Scalar(Slice<'a>, ScalarStyle),
 }
 
+impl<'a> Token<'a>
+{
+    pub fn into_owned(self) -> Token<'static>
+    {
+        match self
+        {
+            Token::StreamStart(encoding) => Token::StreamStart(encoding),
+            Token::StreamEnd => Token::StreamEnd,
+            Token::VersionDirective(major, minor) => Token::VersionDirective(major, minor),
+            Token::TagDirective(handle, suffix) => Token::TagDirective(
+                Slice::Owned(handle.into_owned()),
+                Slice::Owned(suffix.into_owned()),
+            ),
+            Token::DocumentStart => Token::DocumentStart,
+            Token::DocumentEnd => Token::DocumentEnd,
+            Token::BlockSequenceStart => Token::FlowSequenceStart,
+            Token::BlockMappingStart => Token::FlowMappingStart,
+            Token::BlockEnd => Token::BlockEnd,
+            Token::FlowSequenceStart => Token::FlowSequenceStart,
+            Token::FlowSequenceEnd => Token::FlowSequenceEnd,
+            Token::FlowMappingStart => Token::FlowMappingStart,
+            Token::FlowMappingEnd => Token::FlowMappingEnd,
+            Token::BlockEntry => Token::BlockEntry,
+            Token::FlowEntry => Token::FlowEntry,
+            Token::Key => Token::Key,
+            Token::Value => Token::Value,
+            Token::Alias(alias) => Token::Alias(Slice::Owned(alias.into_owned())),
+            Token::Anchor(anchor) => Token::Anchor(Slice::Owned(anchor.into_owned())),
+            Token::Tag(handle, suffix) => Token::Tag(
+                Slice::Owned(handle.into_owned()),
+                Slice::Owned(suffix.into_owned()),
+            ),
+            Token::Scalar(contents, kind) =>
+            {
+                Token::Scalar(Slice::Owned(contents.into_owned()), kind)
+            },
+        }
+    }
+}
+
+/// This allows us to discriminate between a Token with
+/// different lifetimes, specifically either a lifetime
+/// 'borrow-ed from the underlying data or 'copy-ied from
+/// some scratch space provided.
+#[derive(Debug, PartialEq)]
+pub enum Ref<'borrow, 'copy>
+{
+    Borrow(Token<'borrow>),
+    Copy(Token<'copy>),
+}
+
+impl<'b, 'c> Ref<'b, 'c>
+{
+    /// Unifies the lifetimes of the underlying Token,
+    /// returning one that lives at least as long as
+    /// 'borrow. Note that this _will_ allocate if a copy
+    /// needs to be made.
+    pub fn into_inner(self) -> Token<'b>
+    {
+        match self
+        {
+            Self::Borrow(t) => t,
+            Self::Copy(t) => t.into_owned(),
+        }
+    }
+
+    /// Short hand check if the Ref contains a borrowed
+    /// Token
+    pub fn is_borrowed(&self) -> bool
+    {
+        match self
+        {
+            Self::Borrow(_) => true,
+            Self::Copy(_) => false,
+        }
+    }
+
+    /// Short hand check if the Ref contains a copied Token
+    pub fn is_copied(&self) -> bool
+    {
+        !self.is_borrowed()
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum StreamEncoding
 {
