@@ -3,9 +3,14 @@ use crate::{
         error::{ScanError, ScanResult as Result},
         scalar::escape::flow_unescape,
     },
-    token::{ScalarStyle, Token},
+    token::{Ref, ScalarStyle, Token},
 };
 
+/// Scans a single or double quoted (flow) scalar returning
+/// a Token containing the contents, and the amount read
+/// from .base. This function will attempt to borrow from
+/// the underlying .base, however it may be required to copy
+/// into .scratch and borrow from that lifetime.
 pub(super) fn scan_flow_scalar<'b, 'c>(
     base: &'b str,
     scratch: &'c mut Vec<u8>,
@@ -236,17 +241,6 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
     }
 
     *can_borrow = false
-}
-
-/// This allows us to discriminate between a Token with
-/// different lifetimes, specifically either a lifetime
-/// 'borrow-ed from the underlying data or 'copy-ied from
-/// some scratch space provided.
-#[derive(Debug, PartialEq)]
-pub enum Ref<'borrow, 'copy>
-{
-    Borrow(Token<'borrow>),
-    Copy(Token<'copy>),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
