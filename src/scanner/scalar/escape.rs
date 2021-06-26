@@ -86,7 +86,7 @@ fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> 
             None => return Err(ScanError::UnexpectedEOF),
             Some(c) if !c.is_ascii_hexdigit() => return Err(ScanError::UnknownEscape),
 
-            Some(b) => value = (value << 4) + as_hex(*b),
+            Some(b) => value = (value << 4) + as_hex(*b) as u32,
         }
         advance!(buffer, 1, i);
     }
@@ -128,7 +128,7 @@ fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> 
  */
 #[allow(clippy::manual_range_contains)]
 #[inline]
-fn as_hex(b: u8) -> u32
+fn as_hex(b: u8) -> u8
 {
     let ret = if b >= b'A' && b <= b'F'
     {
@@ -143,7 +143,7 @@ fn as_hex(b: u8) -> u32
         b - b'0'
     };
 
-    ret as u32
+    ret
 }
 
 /// <Next Line> (U+0085)
