@@ -120,6 +120,61 @@ fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> 
     Ok(codepoint_len as usize)
 }
 
+fn tag_uri_unescape(base: &str, scratch: &mut Vec<u8>, _directive: bool) -> Result<usize>
+{
+    let mut buffer = base;
+    let mut codepoint_len: i8 = 0;
+
+    while {
+        if !(buffer.len() >= 3)
+        {
+            return Err(ScanError::UnexpectedEOF);
+        }
+
+        if !(check!(~buffer => b'%') && isHex!(~buffer, 1) && isHex!(~buffer, 2))
+        {
+            return Err(ScanError::UnknownEscape);
+        }
+
+        // Safety: we just checked that there are at least three
+        // bytes in the buffer
+        let octet: u8 = (as_hex(buffer.as_bytes()[1]) << 4) + as_hex(buffer.as_bytes()[2]);
+
+        match codepoint_len
+        {
+            // First time through, determine how many octets this codepoint has
+            0 =>
+            {
+                codepoint_len = match octet
+                {
+                    o if (o & 0x80) == 0x00 => 1,
+                    o if (o & 0xE0) == 0xC0 => 2,
+                    o if (o & 0xF0) == 0xE0 => 3,
+                    o if (o & 0xF8) == 0xF0 => 4,
+                    _ => return Err(ScanError::UnknownEscape),
+                }
+            },
+            // Else ensure that the trailing octet is valid
+            _ =>
+            {
+                if (octet & 0xC0) != 0x80
+                {
+                    return Err(ScanError::UnknownEscape);
+                }
+            },
+        }
+
+        scratch.push(octet);
+        codepoint_len -= 1;
+        advance!(buffer, 3);
+
+        codepoint_len > 0
+    }
+    {}
+
+    Ok(base.len() - buffer.len())
+}
+
 /*
  * Inclusive range suggested by clippy here is 5-10%
  * slower than doing it by hand, see
@@ -310,6 +365,59 @@ mod tests
 
             let consumed = flow_unescape(t, scratch)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
+
+            assert_eq!(
+                consumed,
+                t.len(),
+                "on iteration {}, expected to consume {}, got {}",
+                i,
+                t.len(),
+                consumed
+            )
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn tag_uri_unescape_codepoint() -> TestResult
+    {
+        let data = &[
+            r#"%C2%85"#,
+            r#"%c5%b4"#,
+            r#"%E2%B1%bf"#,
+            r#"%E2%B8%BF"#,
+            r#"%f0%90%8f%95"#,
+            r#"%F0%90%AD%81"#,
+        ];
+        let expected: &[&[u8]] = &[
+            &[0xC2, 0x85],
+            &[0xC5, 0xB4],
+            &[0xE2, 0xB1, 0xBF],
+            &[0xE2, 0xB8, 0xBF],
+            &[0xF0, 0x90, 0x8F, 0x95],
+            &[0xF0, 0x90, 0xAD, 0x81],
+        ];
+        let scratch = &mut Vec::new();
+
+        assert_eq!(
+            data.len(),
+            expected.len(),
+            "test data and expected data are not the same length"
+        );
+
+        for (i, (&t, &e)) in data.into_iter().zip(expected).enumerate()
+        {
+            scratch.clear();
+
+            let consumed = tag_uri_unescape(t, scratch, true)
+                .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
+
+            assert_eq!(
+                &*scratch, e,
+                "on iteration {}, expected byte sequence {:?}, got {:?}",
+                i, e, &*scratch
+            );
 
             assert_eq!(
                 consumed,
