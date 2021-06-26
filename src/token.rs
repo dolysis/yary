@@ -87,6 +87,16 @@ impl<'a> Token<'a>
             },
         }
     }
+
+    pub fn borrowed<'c>(self) -> Ref<'a, 'c>
+    {
+        Ref::Borrow(self)
+    }
+
+    pub fn copied<'b>(self) -> Ref<'b, 'a>
+    {
+        Ref::Copy(self)
+    }
 }
 
 /// This allows us to discriminate between a Token with
@@ -130,6 +140,18 @@ impl<'b, 'c> Ref<'b, 'c>
     pub fn is_copied(&self) -> bool
     {
         !self.is_borrowed()
+    }
+}
+
+impl<'b, 'c> PartialEq<Token<'_>> for Ref<'b, 'c>
+{
+    fn eq(&self, other: &Token<'_>) -> bool
+    {
+        match self
+        {
+            Self::Borrow(t) => t.eq(other),
+            Self::Copy(t) => t.eq(other),
+        }
     }
 }
 
