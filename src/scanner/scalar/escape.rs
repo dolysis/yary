@@ -219,7 +219,7 @@ const PS: [u8; 3] = [b'\xE2', b'\x80', b'\xA9'];
 #[cfg(test)]
 mod tests
 {
-    use anyhow::anyhow;
+    use anyhow::{anyhow, bail};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -436,5 +436,45 @@ mod tests
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn tag_uri_unescape_eof() -> TestResult
+    {
+        let data = r#"%C2%8"#;
+        let scratch = &mut Vec::new();
+        let expected = ScanError::UnexpectedEOF;
+
+        match tag_uri_unescape(data, scratch, true)
+        {
+            Err(e) if e == expected => Ok(()),
+
+            Err(e) => bail!("expected error: {}, got different error: {}", expected, e),
+            Ok(amt) => bail!(
+                "expected error: {}, got unexpected value: {}",
+                expected,
+                amt
+            ),
+        }
+    }
+
+    #[test]
+    fn tag_uri_unescape_invalid() -> TestResult
+    {
+        let data = r#"\xC285"#;
+        let scratch = &mut Vec::new();
+        let expected = ScanError::UnknownEscape;
+
+        match tag_uri_unescape(data, scratch, true)
+        {
+            Err(e) if e == expected => Ok(()),
+
+            Err(e) => bail!("expected error: {}, got different error: {}", expected, e),
+            Ok(amt) => bail!(
+                "expected error: {}, got unexpected value: {}",
+                expected,
+                amt
+            ),
+        }
     }
 }
