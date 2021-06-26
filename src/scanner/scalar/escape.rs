@@ -15,7 +15,7 @@ use crate::scanner::error::{ScanError, ScanResult as Result};
 /// escape sequence.
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#c-escape
-pub(super) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
+pub(in crate::scanner) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
 {
     let mut buffer = base;
     let mut escape_len: Option<u8> = None;
@@ -72,8 +72,11 @@ pub(super) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
 /// to the scratch, returning the length of .base consumed.
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#ns-uri-char
-pub(super) fn tag_uri_unescape(base: &str, scratch: &mut Vec<u8>, _directive: bool)
-    -> Result<usize>
+pub(in crate::scanner) fn tag_uri_unescape(
+    base: &str,
+    scratch: &mut Vec<u8>,
+    _directive: bool,
+) -> Result<usize>
 {
     let mut buffer = base;
     let mut codepoint_len: i8 = 0;
