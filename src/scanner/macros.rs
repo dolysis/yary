@@ -186,6 +186,29 @@ macro_rules! isBlankZ {
     };
 }
 
+/// Checks if byte (@ .offset) in .buffer is hexadecimal
+///
+/// Modifiers:
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants:
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
+///     /3 .buffer, else .error
+///             := /4 .buffer, 0, else .error
+///     /4 .buffer, .offset, else .error
+macro_rules! isHex {
+    (~ $buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isHex!($buffer.as_bytes() $(, $offset)? $(, else $error)? )
+    };
+    ($buffer:expr $(, $offset:expr )? $(, else $error:expr)? ) => {
+        check!($buffer $(, $offset)? =>
+                [b'0'..=b'9', ..] | [b'A'..=b'F', ..] | [b'a'..=b'f', ..]
+                $(, else $error )?
+            )
+    };
+}
+
 #[cfg(test)]
 mod tests
 {
