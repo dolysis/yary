@@ -9,8 +9,8 @@ use crate::scanner::error::{ScanError, ScanResult as Result};
 /// 32 bit unicode points.
 ///
 /// It writes the unescaped character to .scratch, returning
-/// the length of .buffer advanced, or an error if the
-/// escape sequence is invalid. It expects .buffer->0 is a
+/// the length of .base advanced, or an error if the
+/// escape sequence is invalid. It expects .base->0 is a
 /// backslash (\\), as this is the only valid start of an
 /// escape sequence.
 ///
