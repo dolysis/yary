@@ -67,60 +67,13 @@ pub(super) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
     Ok(base.len() - buffer.len())
 }
 
-/// Writes a UTF8 codepoint to the scratch space
-fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> Result<usize>
-{
-    let mut buffer = base;
-    let mut i = 0;
-    let mut value: u32 = 0;
-
-    if codepoint_len < 1
-    {
-        return Ok(0);
-    }
-
-    while i < codepoint_len
-    {
-        match buffer.as_bytes().first()
-        {
-            None => return Err(ScanError::UnexpectedEOF),
-            Some(c) if !c.is_ascii_hexdigit() => return Err(ScanError::UnknownEscape),
-
-            Some(b) => value = (value << 4) + as_hex(*b) as u32,
-        }
-        advance!(buffer, 1, i);
-    }
-
-    // Bit shift the value into the correct byte configuration
-    // for UTF8
-    match value
-    {
-        // v <= 127 (ASCII)
-        v if v <= 0x7F => scratch.push(v as u8),
-        // v <= 2047
-        v if v <= 0x7FF =>
-        {
-            scratch.extend_from_slice(&[0xC0 | (v >> 6) as u8, 0x80 | (v & 0x3F) as u8])
-        },
-        // v <= 65535
-        v if v <= 0xFFFF => scratch.extend_from_slice(&[
-            0xE0 | (v >> 12) as u8,
-            0x80 | ((v >> 6) & 0x3F) as u8,
-            0x80 | (v & 0x3F) as u8,
-        ]),
-        // Otherwise it must be a full 4 byte code point
-        v => scratch.extend_from_slice(&[
-            0xF0 | (v >> 18) as u8,
-            0x80 | ((v >> 12) & 0x3F) as u8,
-            0x80 | ((v >> 6) & 0x3F) as u8,
-            0x80 | (v & 0x3F) as u8,
-        ]),
-    }
-
-    Ok(codepoint_len as usize)
-}
-
-fn tag_uri_unescape(base: &str, scratch: &mut Vec<u8>, _directive: bool) -> Result<usize>
+/// Unescape a percent encoded UTF8 tag escape sequence as
+/// defined in [Section 5.6][Link], writing the code point
+/// to the scratch, returning the length of .base consumed.
+///
+/// [Link]: https://yaml.org/spec/1.2/spec.html#ns-uri-char
+pub(super) fn tag_uri_unescape(base: &str, scratch: &mut Vec<u8>, _directive: bool)
+    -> Result<usize>
 {
     let mut buffer = base;
     let mut codepoint_len: i8 = 0;
@@ -173,6 +126,59 @@ fn tag_uri_unescape(base: &str, scratch: &mut Vec<u8>, _directive: bool) -> Resu
     {}
 
     Ok(base.len() - buffer.len())
+}
+
+/// Writes a UTF8 codepoint to the scratch space
+fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> Result<usize>
+{
+    let mut buffer = base;
+    let mut i = 0;
+    let mut value: u32 = 0;
+
+    if codepoint_len < 1
+    {
+        return Ok(0);
+    }
+
+    while i < codepoint_len
+    {
+        match buffer.as_bytes().first()
+        {
+            None => return Err(ScanError::UnexpectedEOF),
+            Some(c) if !c.is_ascii_hexdigit() => return Err(ScanError::UnknownEscape),
+
+            Some(b) => value = (value << 4) + as_hex(*b) as u32,
+        }
+        advance!(buffer, 1, i);
+    }
+
+    // Bit shift the value into the correct byte configuration
+    // for UTF8
+    match value
+    {
+        // v <= 127 (ASCII)
+        v if v <= 0x7F => scratch.push(v as u8),
+        // v <= 2047
+        v if v <= 0x7FF =>
+        {
+            scratch.extend_from_slice(&[0xC0 | (v >> 6) as u8, 0x80 | (v & 0x3F) as u8])
+        },
+        // v <= 65535
+        v if v <= 0xFFFF => scratch.extend_from_slice(&[
+            0xE0 | (v >> 12) as u8,
+            0x80 | ((v >> 6) & 0x3F) as u8,
+            0x80 | (v & 0x3F) as u8,
+        ]),
+        // Otherwise it must be a full 4 byte code point
+        v => scratch.extend_from_slice(&[
+            0xF0 | (v >> 18) as u8,
+            0x80 | ((v >> 12) & 0x3F) as u8,
+            0x80 | ((v >> 6) & 0x3F) as u8,
+            0x80 | (v & 0x3F) as u8,
+        ]),
+    }
+
+    Ok(codepoint_len as usize)
 }
 
 /*
