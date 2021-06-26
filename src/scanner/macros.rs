@@ -70,7 +70,7 @@ macro_rules! check {
     (@priv $buffer:expr, $offset:expr => $( $match:tt )|+) => {
         match $buffer.get($offset..) {
             Some(buffer) => check!(@priv buffer => $( $match )|+),
-            None => check!(@eofck $( $match )|+ )
+            None => check!(@eofck $( $match )|+ ),
         }
     };
     (@priv $buffer:expr => $( $match:tt )|+) => {
@@ -81,16 +81,16 @@ macro_rules! check {
     };
     (@priv $buffer:expr, $offset:expr => $( $match:tt )|+, else $error:expr) => {
         match $buffer.get($offset..) {
-            Some(buffer) => check!(@priv buffer => $( $match )|+ else $error),
-            None if check!(@eofck $( $match )|+ ) => Ok(())
-            _ => Err($crate::scanner::error::ScanError::UnexpectedEOF)
+            Some(buffer) => check!(@priv buffer => $( $match )|+, else $error),
+            None if check!(@eofck $( $match )|+ ) => Ok(()),
+            _ => Err($crate::scanner::error::ScanError::UnexpectedEOF),
         }
     };
     (@priv $buffer:expr => $( $match:tt )|+, else $error:expr) => {
         match $buffer {
             $( check!(@ptn $match) )|+ => Ok(()),
             [] => Err($crate::scanner::error::ScanError::UnexpectedEOF),
-            _ => Err($error)
+            _ => Err($error),
         }
     };
 
