@@ -724,6 +724,20 @@ mod tests
     }
 
     #[test]
+    fn directive_tag_percent_encoding()
+    {
+        let data = "%TAG !! :My:%C6%86razy:T%c8%82g:\n";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
+            | Token::TagDirective(cow!("!!"), cow!(":My:Ɔrazy:TȂg:"))   => "expected unescaped unicode prefix",
+            | Token::StreamEnd                                          => "expected end of stream",
+            @ None                                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn anchor_alias()
     {
         let data = "*alias\n";
