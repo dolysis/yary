@@ -79,7 +79,7 @@ pub(super) fn tag_uri_unescape(base: &str, scratch: &mut Vec<u8>, _directive: bo
     let mut codepoint_len: i8 = 0;
 
     while {
-        if !(buffer.len() >= 3)
+        if buffer.len() < 3
         {
             return Err(ScanError::UnexpectedEOF);
         }
@@ -191,7 +191,7 @@ fn write_unicode_point(base: &str, scratch: &mut Vec<u8>, codepoint_len: u8) -> 
 #[inline]
 fn as_hex(b: u8) -> u8
 {
-    let ret = if b >= b'A' && b <= b'F'
+    if b >= b'A' && b <= b'F'
     {
         b - b'A' + 10
     }
@@ -202,9 +202,7 @@ fn as_hex(b: u8) -> u8
     else
     {
         b - b'0'
-    };
-
-    ret
+    }
 }
 
 /// <Next Line> (U+0085)
