@@ -362,13 +362,22 @@ impl<'b> Scanner<'b>
     }
 }
 
-impl<'a> Iterator for Scanner<'a>
+struct ScanIter<'b, 'c>
 {
-    type Item = Result<Token<'a>>;
+    inner:   &'b mut Scanner<'b>,
+    scratch: &'c mut Vec<u8>,
+}
 
-    fn next(&mut self) -> Option<Self::Item>
+impl<'b, 'c> ScanIter<'b, 'c>
+{
+    pub fn new(inner: &'b mut Scanner<'b>, scratch: &'c mut Vec<u8>) -> Self
     {
-        self.next_token().transpose()
+        Self { inner, scratch }
+    }
+
+    pub fn next(&mut self) -> Option<Result<Ref<'_, '_>>>
+    {
+        self.inner.next_token(self.scratch).transpose()
     }
 }
 
