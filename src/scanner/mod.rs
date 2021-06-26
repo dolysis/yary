@@ -6,21 +6,26 @@ mod macros;
 mod error;
 mod scalar;
 
+use std::ops::Range;
+
 use atoi::atoi;
 
 use self::error::{ScanError, ScanResult as Result};
-use crate::token::{StreamEncoding, Token};
+use crate::{
+    scanner::scalar::escape::tag_uri_unescape,
+    token::{Ref, StreamEncoding, Token},
+};
 
 #[derive(Debug)]
-struct Scanner<'a>
+struct Scanner<'b>
 {
-    buffer: &'a str,
+    buffer: &'b str,
     state:  StreamState,
 }
 
-impl<'a> Scanner<'a>
+impl<'b> Scanner<'b>
 {
-    pub fn new(data: &'a str) -> Self
+    pub fn new(data: &'b str) -> Self
     {
         Self {
             buffer: data,
@@ -28,39 +33,39 @@ impl<'a> Scanner<'a>
         }
     }
 
-    fn next_token(&mut self) -> Result<Option<Token<'a>>>
+    fn next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
-        if let begin @ Some(_) = self.start_stream()
+        if let Some(begin) = self.start_stream()
         {
-            return Ok(begin);
+            return Ok(begin.borrowed().into());
         }
 
         Self::eat_whitespace(&mut self.buffer, true);
 
-        if let end @ Some(_) = self.stream_end()
+        if let Some(end) = self.stream_end()
         {
-            return Ok(end);
+            return Ok(end.borrowed().into());
         }
 
-        if let document @ Some(_) = self.document_marker()
+        if let Some(document) = self.document_marker()
         {
-            return Ok(document);
+            return Ok(document.borrowed().into());
         }
 
-        if let directive @ Some(_) = self.directive()?
+        if let directive @ Some(_) = self.directive(scratch)?
         {
             return Ok(directive);
         }
 
-        if let anchor @ Some(_) = self.anchor()?
+        if let Some(anchor) = self.anchor()?
         {
-            return Ok(anchor);
+            return Ok(anchor.borrowed().into());
         }
 
         Ok(None)
     }
 
-    fn start_stream(&mut self) -> Option<Token<'a>>
+    fn start_stream(&mut self) -> Option<Token<'b>>
     {
         match self.state
         {
@@ -74,7 +79,7 @@ impl<'a> Scanner<'a>
         }
     }
 
-    fn stream_end(&mut self) -> Option<Token<'a>>
+    fn stream_end(&mut self) -> Option<Token<'b>>
     {
         match (self.state, self.buffer.is_empty())
         {
@@ -140,7 +145,7 @@ impl<'a> Scanner<'a>
         chomped.unwrap_or(0)
     }
 
-    fn document_marker(&mut self) -> Option<Token<'a>>
+    fn document_marker(&mut self) -> Option<Token<'b>>
     {
         if self.buffer.starts_with("---")
         {
@@ -160,7 +165,7 @@ impl<'a> Scanner<'a>
         }
     }
 
-    fn directive(&mut self) -> Result<Option<Token<'a>>>
+    fn directive<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
         let mut buffer = self.buffer;
 
@@ -213,7 +218,7 @@ impl<'a> Scanner<'a>
 
                 advance!(buffer, skip);
 
-                Token::VersionDirective(major, minor)
+                Token::VersionDirective(major, minor).borrowed()
             },
             DirectiveKind::Tag =>
             {
@@ -257,22 +262,39 @@ impl<'a> Scanner<'a>
 
                 Self::eat_whitespace(&mut buffer, false);
 
+                let mut can_borrow = true;
                 // %TAG !named! :tag:prefix # a comment\n
                 //              ^^^^^^^^^^^
-                let prefix = match scan_directive_tag_prefix(buffer.as_bytes())
-                {
-                    [] => return Err(ScanError::InvalidTagPrefix),
-                    prefix @ [..] => prefix,
-                };
-
-                let prefix = advance!(<- buffer, prefix.len());
+                let (prefix, amt) = scan_directive_tag_prefix(buffer, scratch, &mut can_borrow)?;
 
                 // %TAG !named! tag-prefix # a comment\n
                 //                        ^
                 // Check there is whitespace or a newline after the tag
-                check!(~buffer => b' ' | b'\n', else ScanError::InvalidTagPrefix)?;
+                check!(~buffer, amt => b' ' | b'\n', else ScanError::InvalidTagPrefix)?;
 
-                Token::TagDirective(cow!(handle), cow!(prefix))
+                // If we can borrow, just take the range directly out of
+                // .buffer
+                let token = if can_borrow
+                {
+                    Token::TagDirective(cow!(handle), cow!(&buffer[prefix])).borrowed()
+                }
+                // Otherwise, we'll need to copy both the handle and prefix, to unify our
+                // lifetimes. Note that this isn't strictly necessary, but requiring Token to
+                // contain two unrelated lifetimes is just asking for pain and suffering.
+                else
+                {
+                    let start = scratch.len();
+                    scratch.extend_from_slice(handle.as_bytes());
+
+                    let handle = std::str::from_utf8(&scratch[start..]).unwrap();
+                    let prefix = std::str::from_utf8(&scratch[prefix]).unwrap();
+
+                    Token::TagDirective(cow!(handle), cow!(prefix)).copied()
+                };
+
+                advance!(buffer, amt);
+
+                token
             },
         };
 
@@ -284,7 +306,7 @@ impl<'a> Scanner<'a>
         Ok(Some(token))
     }
 
-    fn anchor(&mut self) -> Result<Option<Token<'a>>>
+    fn anchor(&mut self) -> Result<Option<Token<'b>>>
     {
         let mut buffer = self.buffer;
 
@@ -417,24 +439,79 @@ enum StreamState
     Done,
 }
 
-fn scan_directive_tag_prefix(b: &[u8]) -> &[u8]
+/// Scan a tag directive prefix, as defined in
+/// [Section 6.22][Link], returning a range from either
+/// .base, or .scratch (if a copy was required), and the
+/// amount read from .base. It is the caller's
+/// responsibility to check .can_borrow for whether to range
+/// into .base or .scratch.
+///
+/// [Link]: https://yaml.org/spec/1.2/spec.html#ns-global-tag-prefix
+fn scan_directive_tag_prefix<'b, 'c>(
+    base: &'b str,
+    scratch: &'c mut Vec<u8>,
+    can_borrow: &mut bool,
+) -> Result<(Range<usize>, usize)>
 {
-    take_while(b, valid_in_tag_prefix)
-}
+    let mut buffer = base;
+    let start = scratch.len();
 
-fn valid_in_tag_prefix(b: &u8) -> bool
-{
-    assert_ne!(*b, b'%', "FIXME: url escape decode not implemented yet!");
+    loop
+    {
+        // We're done, we hit the end of the prefix
+        if isBlank!(~buffer) || isBreak!(~buffer)
+        {
+            break;
+        }
+        // If its a normal allowed character, add it
+        else if check!(~buffer =>
+            [b'0'..=b'9', ..] | [b'A'..=b'Z', ..] |
+            [b'a'..=b'z', ..] | [b'&'..=b'/', ..] |
+            b'!' | b'$'| b':' | b';' | b'=' |
+            b'?' | b'@' | b'_' | b'~'
+        )
+        {
+            if !*can_borrow
+            {
+                scratch.push(buffer.as_bytes()[0]);
+            }
+            advance!(buffer, 1);
+        }
+        // If its an escape sequence, we must copy
+        else if check!(~buffer => b'%')
+        {
+            if *can_borrow
+            {
+                // Safety: we will be indexing to _at most_ base's length
+                scratch.extend_from_slice(&base.as_bytes()[..base.len() - buffer.len()]);
 
-    matches!(
-        *b,
-        // alphanumeric
-        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' |
-        // !, $, &, ', (, ), *, +, -, ., /, :, ;
-        b'!' | b'$' | b'&'..=b'/' | b':' | b';' |
-        // =, ?, @, _, ~
-        b'=' | b'?' | b'@' | b'_' | b'~'
-    )
+                *can_borrow = false;
+            }
+            let amt = tag_uri_unescape(buffer, scratch, true)?;
+            advance!(buffer, amt);
+        }
+        // EOF before loop end is an error
+        else if check!(~buffer => [])
+        {
+            return Err(ScanError::UnexpectedEOF);
+        }
+        // Otherwise it was some invalid prefix character
+        else
+        {
+            return Err(ScanError::InvalidTagPrefix);
+        }
+    }
+
+    let advance = base.len() - buffer.len();
+
+    if *can_borrow
+    {
+        Ok((0..advance, advance))
+    }
+    else
+    {
+        Ok((start..scratch.len(), advance))
+    }
 }
 
 fn scan_directive_version(b: &str) -> Result<(u8, usize)>
