@@ -456,9 +456,9 @@ enum StreamState
 /// into .base or .scratch.
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#ns-global-tag-prefix
-fn scan_directive_tag_prefix<'b, 'c>(
-    base: &'b str,
-    scratch: &'c mut Vec<u8>,
+fn scan_directive_tag_prefix(
+    base: &str,
+    scratch: &mut Vec<u8>,
     can_borrow: &mut bool,
 ) -> Result<(Range<usize>, usize)>
 {
