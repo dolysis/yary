@@ -98,50 +98,10 @@ impl<'b> Scanner<'b>
     /// beginning of the new token
     fn eat_whitespace(buffer: &mut &str, comments: bool) -> usize
     {
-        let mut slice = buffer.bytes().enumerate().peekable();
-        let mut chomped = None;
-        let mut chomp_line = false;
+        let amt = eat_whitespace(&buffer, comments);
+        advance!(*buffer, amt);
 
-        while let Some((index, c)) = slice.next()
-        {
-            match c
-            {
-                // Eat spaces
-                b' ' =>
-                {},
-                // If we are starting a comment, chomp the entire line
-                b'#' if comments => chomp_line = true,
-                // Reset line chomp after eating one
-                b'\n' => chomp_line = false,
-                // Chomp anything if we're eating the whole line
-                _ if chomp_line =>
-                {},
-                // We're done, encountered a character that isn't whitespace
-                _ =>
-                {
-                    chomped = Some(index);
-                    break;
-                },
-            }
-        }
-
-        // Adjust our buffer by the chomped length
-        if let Some(index) = chomped
-        {
-            advance!(*buffer, index);
-        }
-
-        // Handle EOF
-        //
-        // if we hit this, then we didn't get a chance to set
-        // chomped in the while loop
-        if slice.peek().is_none()
-        {
-            chomped = buffer.len().into();
-            *buffer = ""
-        }
-
-        chomped.unwrap_or(0)
+        amt
     }
 
     fn document_marker(&mut self) -> Option<Token<'b>>
@@ -448,6 +408,53 @@ where
             _ => return &b[..index],
         }
     }
+}
+
+/// Chomp whitespace and .comments if allowed until a non
+/// whitespace character is encountered, returning the
+/// amount chomped
+fn eat_whitespace(base: &str, comments: bool) -> usize
+{
+    let mut buffer = base;
+    let mut chomp_line = false;
+    let mut done = false;
+
+    loop
+    {
+        let (blank, brk) = (isBlank!(~buffer), isBreak!(~buffer));
+
+        match (blank, brk)
+        {
+            // Non break whitespace
+            (true, _) =>
+            {},
+            // Break whitespace, reset .chomp_line if set
+            (_, true) => chomp_line = false,
+            // If we're allowed to eat .comments, chomp the whole line
+            _ if comments && check!(~buffer => b'#') => chomp_line = true,
+            // Eat everything until EOL or EOF
+            _ if chomp_line && !check!(~buffer => []) =>
+            {},
+            // Otherwise we're finished, exit the loop
+            _ => done = true,
+        }
+
+        if done
+        {
+            break;
+        }
+
+        if brk
+        {
+            advance!(buffer, @line);
+        }
+        else
+        {
+            advance!(buffer, 1);
+        }
+    }
+
+    base.len() - buffer.len()
 }
 
 #[cfg(test)]
