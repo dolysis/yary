@@ -1,8 +1,13 @@
 //! This module contains the various macros used by
 //! lib/scanner.
 
-/// Rebinds .buffer's binding .amount forward, optionally
-/// taking a .var to add .amount to
+/// Rebinds .buffer's binding .amount or a @line break
+/// forward, optionally taking a .var to add .amount to.
+///
+/// Care must be taken to ensure that @line is only used
+/// when you are sure that a YAML line break starts the
+/// given .buffer, as @line _will not advance_ the buffer at
+/// all if it is not a line break
 ///
 /// Modifiers
 ///     <- .buffer := return .buffer->0...amount
@@ -10,6 +15,8 @@
 /// Variants
 ///     /1 .buffer, .amount
 ///     /2 .buffer, .amount, .var
+///     /3 .buffer, @line
+///     /4 .buffer, @line, .var
 macro_rules! advance {
     ($buffer:expr, $amount:expr $(, $var:ident )? ) => {
         let (_, rest) = $buffer.split_at($amount);
@@ -27,6 +34,36 @@ macro_rules! advance {
 
         cut
     }};
+    ($buffer:expr, @line $(, $var:ident )? ) => {
+        let amount = advance!(@amount $buffer);
+        let (_, rest) = $buffer.split_at(amount);
+
+        $buffer = rest;
+
+        $( advance!(@update $var, $amount) )?
+    };
+    (<- $buffer:expr, @line $(, $var:ident )? ) => {{
+        let amount = advance!(@amount $buffer);
+        let (cut, rest) = $buffer.split_at(amount);
+
+        $buffer = rest;
+
+        $( advance!(@update $var, $amount) )?
+
+        cut
+    }};
+
+    (@amount $buffer:expr) => {
+        match $buffer.as_bytes()
+        {
+            [b'\r', b'\n', ..]
+            | [b'\xC2', b'\x85', ..] => 2,
+            [b'\xE2', b'\x80', b'\xA8', ..]
+            | [b'\xE2', b'\x80', b'\xA9', ..] => 3,
+            [b'\r', ..] | [b'\n', ..] => 1,
+            _ => 0,
+        }
+    };
 
     (@update $( $var:ident, $amount:expr)? ) => {
           $({ $var += $amount } )?
