@@ -11,7 +11,7 @@ use atoi::atoi;
 
 use self::error::{ScanError, ScanResult as Result};
 use crate::{
-    scanner::tag::{scan_tag_handle, scan_tag_uri},
+    scanner::tag::scan_tag_directive,
     token::{Ref, StreamEncoding, Token},
 };
 
@@ -182,54 +182,10 @@ impl<'b> Scanner<'b>
             DirectiveKind::Tag =>
             {
                 // Chomp any spaces up to the handle
-                Self::eat_whitespace(&mut buffer, false);
+                advance!(buffer, eat_whitespace(&mut buffer, false));
 
-                // %TAG !named! :tag:prefix # a comment\n
-                //      ^^^^^^^
-                let (handle, amt) = match scan_tag_handle(buffer)?
-                {
-                    Some((handle, amt)) => (handle.into_inner(), amt),
-                    None => return Err(ScanError::InvalidTagHandle),
-                };
-                advance!(buffer, amt);
-
-                // %TAG !named! :tag:prefix # a comment\n
-                //             ^
-                // Check that there is >= 1 whitespace between handle and
-                // prefix
-                isBlank!(~buffer, else ScanError::InvalidTagPrefix)?;
-                Self::eat_whitespace(&mut buffer, false);
-
-                let mut can_borrow = true;
-                // %TAG !named! :tag:prefix # a comment\n
-                //              ^^^^^^^^^^^
-                let (prefix, amt) = scan_tag_uri(buffer, scratch, &mut can_borrow, false)?;
-
-                // %TAG !named! tag-prefix # a comment\n
-                //                        ^
-                // Check there is whitespace or a newline after the tag
-                isWhiteSpace!(~buffer, amt, else ScanError::InvalidTagPrefix)?;
-
-                // If we can borrow, just take the range directly out of
-                // .buffer
-                let token = if can_borrow
-                {
-                    Token::TagDirective(cow!(handle), cow!(&buffer[prefix])).borrowed()
-                }
-                // Otherwise, we'll need to copy both the handle and prefix, to unify our
-                // lifetimes. Note that this isn't strictly necessary, but requiring Token to
-                // contain two unrelated lifetimes is just asking for pain and suffering.
-                else
-                {
-                    let start = scratch.len();
-                    scratch.extend_from_slice(handle.as_bytes());
-
-                    let handle = std::str::from_utf8(&scratch[start..]).unwrap();
-                    let prefix = std::str::from_utf8(&scratch[prefix]).unwrap();
-
-                    Token::TagDirective(cow!(handle), cow!(prefix)).copied()
-                };
-
+                // Scan the directive, copying if necessary
+                let (token, amt) = scan_tag_directive(buffer, scratch)?;
                 advance!(buffer, amt);
 
                 token
