@@ -134,17 +134,21 @@ macro_rules! check {
 /// Variants
 ///     /1 .buffer := /2 .buffer, 0
 ///     /2 .buffer, .offset
+///     /3 .buffer, else .error
+///             := /4 .buffer, 0, else .error
+///     /4 .buffer, .offset, else .error
 macro_rules! isBreak {
-    (~ $buffer:expr $(, $offset:expr )? ) => {
-        isBreak!($buffer.as_bytes() $(, $offset )? )
+    (~ $buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isBreak!($buffer.as_bytes() $(, $offset )? $(, else $error)?)
     };
-    ($buffer:expr $(, $offset:expr )? ) => {
+    ($buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
         check!($buffer $(, $offset)? =>
             b'\r'                                   /* CR   #xD     */
             | b'\n'                                 /* LF   #xA     */
             | [b'\xC2', b'\x85', ..]                /* NEL  #x85    */
             | [b'\xE2', b'\x80', b'\xA8', ..]       /* LS   #x2028  */
             | [b'\xE2', b'\x80', b'\xA9', ..]       /* PS   #x2029  */
+            $(, else $error)?
         )
     };
 }
@@ -157,13 +161,45 @@ macro_rules! isBreak {
 /// Variants:
 ///     /1 .buffer := /2 .buffer, 0
 ///     /2 .buffer, .offset
+///     /3 .buffer, else .error
+///             := /4 .buffer, 0, else .error
+///     /4 .buffer, .offset, else .error
 macro_rules! isBlank {
-    (~ $buffer:expr $(, $offset:expr )? ) => {
-        isBlank!($buffer.as_bytes() $(, $offset )? )
+    (~ $buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isBlank!($buffer.as_bytes() $(, $offset )? $(, else $error )? )
     };
-    ($buffer:expr $(, $offset:expr )? ) => {
-        check!($buffer $(, $offset)? => b' ' | b'\t')
+    ($buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        check!($buffer $(, $offset)? => b' ' | b'\t' $(, else $error )? )
     };
+}
+
+/// Check if the byte (@ .offset) is a space, tab or
+/// line break
+///
+/// Modifiers:
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants:
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
+///     /3 .buffer, else .error
+///             := /4 .buffer, 0, else .error
+///     /4 .buffer, .offset, else .error
+macro_rules! isWhiteSpace {
+    (~ $buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isWhiteSpace!($buffer.as_bytes() $(, $offset )? $(, else $error)? )
+    };
+    ($buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isWhiteSpace!(@priv $buffer $(, $offset )? $(, else $error)? )
+    };
+    (@priv $buffer:expr $(, $offset:expr )? ) => {
+        isBlank!($buffer $(, $offset)?)
+            || isBreak!($buffer $(, $offset)?)
+    };
+    (@priv $buffer:expr $(, $offset:expr )?, else $error:expr ) => {
+        isBlank!($buffer $(, $offset)?, else $error)
+            .or_else(|_| isBreak!($buffer $(, $offset)?, else $error))
+    }
 }
 
 /// Check if the byte (@ .offset) is a space, tab, line
@@ -175,9 +211,9 @@ macro_rules! isBlank {
 /// Variants:
 ///     /1 .buffer := /2 .buffer, 0
 ///     /2 .buffer, .offset
-macro_rules! isBlankZ {
+macro_rules! isWhiteSpaceZ {
     (~ $buffer:expr $(, $offset:expr )? ) => {
-        isBlankZ!($buffer.as_bytes() $(, $offset )? )
+        isWhiteSpaceZ!($buffer.as_bytes() $(, $offset )? )
     };
     ($buffer:expr $(, $offset:expr )? ) => {
         isBlank!($buffer $(, $offset)?)
@@ -281,7 +317,7 @@ mod tests
     }
 
     #[test]
-    fn scanner_macro_isBlankZ()
+    fn scanner_macro_isWhiteSpaceZ()
     {
         let data: [&[char]; 2] = [&BLANK_CHARS, &BREAK_CHARS];
 
@@ -290,20 +326,20 @@ mod tests
             let mut c = [0; 4];
             let b = brk.encode_utf8(&mut c);
 
-            let test = dbg!(isBlankZ!(~b), isBlankZ!(b.as_bytes()));
+            let test = dbg!(isWhiteSpaceZ!(~b), isWhiteSpaceZ!(b.as_bytes()));
 
             assert!(test.0 && test.1);
         }
 
         let empty = "";
 
-        let test = dbg!((isBlankZ!(~empty), isBlankZ!(empty.as_bytes())));
+        let test = dbg!((isWhiteSpaceZ!(~empty), isWhiteSpaceZ!(empty.as_bytes())));
 
         assert!(test.0 && test.1);
     }
 
     #[test]
-    fn scanner_macro_isBlankZ_offset()
+    fn scanner_macro_isWhiteSpaceZ_offset()
     {
         let data: [&[char]; 2] = [&BLANK_CHARS, &BREAK_CHARS];
 
@@ -313,14 +349,17 @@ mod tests
             brk.encode_utf8(&mut c[4..]);
             let b = std::str::from_utf8(&c).expect("valid UTF8");
 
-            let test = dbg!(isBlankZ!(~b, 4), isBlankZ!(b.as_bytes(), 4));
+            let test = dbg!(isWhiteSpaceZ!(~b, 4), isWhiteSpaceZ!(b.as_bytes(), 4));
 
             assert!(test.0 && test.1);
         }
 
         let empty = "    ";
 
-        let test = dbg!((isBlankZ!(~empty, 5), isBlankZ!(empty.as_bytes(), 5)));
+        let test = dbg!((
+            isWhiteSpaceZ!(~empty, 5),
+            isWhiteSpaceZ!(empty.as_bytes(), 5)
+        ));
 
         assert!(test.0 && test.1);
     }
