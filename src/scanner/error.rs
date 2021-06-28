@@ -27,6 +27,9 @@ pub enum ScanError
     /// or more spaces
     InvalidTagPrefix,
 
+    /// Tag suffix was invalid
+    InvalidTagSuffix,
+
     /// Either an anchor (*) or alias (&)'s name was invalid
     InvalidAnchorName,
 
