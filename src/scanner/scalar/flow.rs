@@ -45,7 +45,7 @@ pub(super) fn scan_flow_scalar<'b, 'c>(
         //
         // This should be fixed once I figure out how to do that
         if check!(~buffer => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
-            && isBlankZ!(~buffer, 3)
+            && isWhiteSpaceZ!(~buffer, 3)
         {
             return Err(ScanError::InvalidFlowScalar);
         }
@@ -57,7 +57,7 @@ pub(super) fn scan_flow_scalar<'b, 'c>(
         }
 
         // Consume non whitespace characters
-        while !isBlankZ!(~buffer)
+        while !isWhiteSpaceZ!(~buffer)
         {
             // if we encounter an escaped quote we can no longer borrow
             // from .base, we must unescape the quote into .scratch
