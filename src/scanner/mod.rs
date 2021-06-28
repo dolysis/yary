@@ -5,14 +5,13 @@ mod macros;
 
 mod error;
 mod scalar;
-
-use std::ops::Range;
+mod tag;
 
 use atoi::atoi;
 
 use self::error::{ScanError, ScanResult as Result};
 use crate::{
-    scanner::scalar::escape::tag_uri_unescape,
+    scanner::tag::{scan_tag_handle, scan_tag_uri},
     token::{Ref, StreamEncoding, Token},
 };
 
@@ -222,55 +221,34 @@ impl<'b> Scanner<'b>
             },
             DirectiveKind::Tag =>
             {
-                let mut markers = 0;
-
                 // Chomp any spaces up to the handle
                 Self::eat_whitespace(&mut buffer, false);
 
-                // %TAG !handle! tag-prefix # a comment \n
-                //      ^
-                check!(~buffer => b'!', else ScanError::InvalidTagHandle)?;
-
-                markers += 1;
-
-                // %TAG !handle! tag-prefix # a comment \n
-                //       ^^^^^^
-                // Safety: we just proved above we have >= 1 byte ('!')
-                let name = take_while(buffer[1..].as_bytes(), u8::is_ascii_alphanumeric);
-
-                match buffer.as_bytes().get(markers + name.len())
+                // %TAG !named! :tag:prefix # a comment\n
+                //      ^^^^^^^
+                let (handle, amt) = match scan_tag_handle(buffer)?
                 {
-                    // %TAG !! tag-prefix # a comment \n
-                    //       ^
-                    // Either a secondary handle (!!) or named (!:alphanumeric:!)
-                    Some(b'!') => markers += 1,
-                    // %TAG ! tag-prefix # a comment \n
-                    //       ^
-                    // If no name, and no second ! this is a primary handle
-                    _ if name.is_empty() =>
-                    {},
-                    // Otherwise its an error
-                    Some(_) => return Err(ScanError::InvalidTagHandle),
-                    None => return Err(ScanError::UnexpectedEOF),
-                }
+                    Some((handle, amt)) => (handle.into_inner(), amt),
+                    None => return Err(ScanError::InvalidTagHandle),
+                };
+                advance!(buffer, amt);
 
-                let handle = advance!(<- buffer, markers + name.len());
-
+                // %TAG !named! :tag:prefix # a comment\n
+                //             ^
                 // Check that there is >= 1 whitespace between handle and
                 // prefix
-                check!(~buffer => b' ', else ScanError::InvalidTagPrefix)?;
-
+                isBlank!(~buffer, else ScanError::InvalidTagPrefix)?;
                 Self::eat_whitespace(&mut buffer, false);
 
                 let mut can_borrow = true;
                 // %TAG !named! :tag:prefix # a comment\n
                 //              ^^^^^^^^^^^
-                let (prefix, amt) = scan_directive_tag_prefix(buffer, scratch, &mut can_borrow)?;
+                let (prefix, amt) = scan_tag_uri(buffer, scratch, &mut can_borrow, false)?;
 
                 // %TAG !named! tag-prefix # a comment\n
                 //                        ^
                 // Check there is whitespace or a newline after the tag
-                check!(~buffer, amt => b' ' | b'\n', else ScanError::InvalidTagPrefix)?;
+                isWhiteSpace!(~buffer, amt, else ScanError::InvalidTagPrefix)?;
 
                 // If we can borrow, just take the range directly out of
                 // .buffer
@@ -446,81 +424,6 @@ enum StreamState
     Start,
     Stream,
     Done,
-}
-
-/// Scan a tag directive prefix, as defined in
-/// [Section 6.22][Link], returning a range from either
-/// .base, or .scratch (if a copy was required), and the
-/// amount read from .base. It is the caller's
-/// responsibility to check .can_borrow for whether to range
-/// into .base or .scratch.
-///
-/// [Link]: https://yaml.org/spec/1.2/spec.html#ns-global-tag-prefix
-fn scan_directive_tag_prefix(
-    base: &str,
-    scratch: &mut Vec<u8>,
-    can_borrow: &mut bool,
-) -> Result<(Range<usize>, usize)>
-{
-    let mut buffer = base;
-    let start = scratch.len();
-
-    loop
-    {
-        // We're done, we hit the end of the prefix
-        if isBlank!(~buffer) || isBreak!(~buffer)
-        {
-            break;
-        }
-        // If its a normal allowed character, add it
-        else if check!(~buffer =>
-            [b'0'..=b'9', ..] | [b'A'..=b'Z', ..] |
-            [b'a'..=b'z', ..] | [b'&'..=b'/', ..] |
-            b'!' | b'$'| b':' | b';' | b'=' |
-            b'?' | b'@' | b'_' | b'~'
-        )
-        {
-            if !*can_borrow
-            {
-                scratch.push(buffer.as_bytes()[0]);
-            }
-            advance!(buffer, 1);
-        }
-        // If its an escape sequence, we must copy
-        else if check!(~buffer => b'%')
-        {
-            if *can_borrow
-            {
-                // Safety: we will be indexing to _at most_ base's length
-                scratch.extend_from_slice(&base.as_bytes()[..base.len() - buffer.len()]);
-
-                *can_borrow = false;
-            }
-            let amt = tag_uri_unescape(buffer, scratch, true)?;
-            advance!(buffer, amt);
-        }
-        // EOF before loop end is an error
-        else if check!(~buffer => [])
-        {
-            return Err(ScanError::UnexpectedEOF);
-        }
-        // Otherwise it was some invalid prefix character
-        else
-        {
-            return Err(ScanError::InvalidTagPrefix);
-        }
-    }
-
-    let advance = base.len() - buffer.len();
-
-    if *can_borrow
-    {
-        Ok((0..advance, advance))
-    }
-    else
-    {
-        Ok((start..scratch.len(), advance))
-    }
 }
 
 fn scan_directive_version(b: &str) -> Result<(u8, usize)>
