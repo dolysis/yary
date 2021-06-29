@@ -7,19 +7,23 @@
 /// failure
 macro_rules! tokens {
     ($scanner:expr => $($id:tt $expected:expr $(=> $msg:tt)?),+ ) => {
-        let mut scratch = Vec::new();
-        let mut iter = crate::scanner::ScanIter::new(&mut $scanner, &mut scratch);
+        fn __tokens<'b: 'a, 'a>(s: &'a mut crate::scanner::Scanner<'b>) {
+            let mut scratch = Vec::new();
+            let iter = crate::scanner::ScanIter::new(s, &mut scratch);
 
-        let mut f = || -> std::result::Result<(), ::anyhow::Error> {
+            let f = move |mut i: crate::scanner::ScanIter| -> std::result::Result<(), ::anyhow::Error> {
 
-            $( tokens!(@unwrap $id iter => $expected $(=> $msg)? ); )+
+                $( tokens!(@unwrap $id i => $expected $(=> $msg)? ); )+
 
-            Ok(())
-        };
+                Ok(())
+            };
 
-        if let Err(e) = f() {
-            panic!("tokens! error: {}", e)
+            if let Err(e) = f(iter) {
+                panic!("tokens! error: {}", e)
+            }
         }
+
+        __tokens(&mut $scanner)
     };
 
     // <-- PRIVATE VARIANTS -->
