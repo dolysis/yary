@@ -221,10 +221,10 @@ impl<'b> Scanner<'b>
             DirectiveKind::Tag =>
             {
                 // Chomp any spaces up to the handle
-                advance!(buffer, eat_whitespace(buffer, false));
+                advance!(buffer, eat_whitespace(buffer, &mut stats, false));
 
                 // Scan the directive, copying if necessary
-                let (token, amt) = scan_tag_directive(buffer, scratch)?;
+                let (token, amt) = scan_tag_directive(buffer, &mut stats, scratch)?;
                 advance!(buffer, amt);
 
                 token
@@ -235,6 +235,7 @@ impl<'b> Scanner<'b>
         //          ^^^^^^^^^^^^^^^^^ buffer
         // ^^^^^^^^^ self.buffer.len - buffer.len
         advance!(self.buffer, self.buffer.len() - buffer.len());
+        self.stats += stats;
 
         Ok(Some(token))
     }
@@ -245,19 +246,21 @@ impl<'b> Scanner<'b>
     fn tag<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
         let mut buffer = self.buffer;
+        let mut stats = MStats::new();
 
         if !check!(~buffer => [TAG, ..])
         {
             return Ok(None);
         }
 
-        let (token, amt) = scan_node_tag(buffer, scratch)?;
+        let (token, amt) = scan_node_tag(buffer, &mut stats, scratch)?;
         advance!(buffer, amt);
 
         // !named_tag!type-suffix "my tagged value"
         //                       ^^^^^^^^^^^^^^^^^^ buffer
         // ^^^^^^^^^^^^^^^^^^^^^^ self.buffer.len - buffer.len
         advance!(self.buffer, self.buffer.len() - buffer.len());
+        self.stats += stats;
 
         Ok(Some(token))
     }
