@@ -325,16 +325,19 @@ impl<'b> Scanner<'b>
     fn flow_scalar<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
         let mut buffer = self.buffer;
+        let mut stats = MStats::new();
 
         if !check!(~buffer => [SINGLE, ..] | [DOUBLE, ..])
         {
             return Ok(None);
         }
 
-        let (scalar, amt) = scan_flow_scalar(buffer, scratch, check!(~buffer => [SINGLE, ..]))?;
+        let (scalar, amt) =
+            scan_flow_scalar(buffer, &mut stats, scratch, check!(~buffer => [SINGLE, ..]))?;
         advance!(buffer, amt);
 
         advance!(self.buffer, self.buffer.len() - buffer.len());
+        self.stats += stats;
 
         Ok(Some(scalar))
     }
