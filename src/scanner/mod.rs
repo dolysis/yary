@@ -499,6 +499,7 @@ mod tests
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::token::ScalarStyle;
 
     #[test]
     fn empty()
@@ -709,6 +710,158 @@ mod tests
     }
 
     #[test]
+    fn tag_primary()
+    {
+        let data = "!a ";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::Tag(cow!("!"), cow!("a"))          => "expected a primary tag ('!', 'a')",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+    #[test]
+    fn tag_secondary()
+    {
+        let data = "!!str ";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::Tag(cow!("!!"), cow!("str"))       => "expected a secondary tag ('!!', 'str')",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn tag_named()
+    {
+        let data = "    !named!tag-suffix ";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            | Token::Tag(cow!("!named!"), cow!("tag-suffix"))   => "expected a global tag ('!named!', 'tag-suffix')",
+            | Token::StreamEnd                                  => "expected end of stream",
+            @ None                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn tag_escaped()
+    {
+        let data = "!n!my:%3D%3descaped: ";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            | Token::Tag(cow!("!n!"), cow!("my:==escaped:"))    => "expected a global tag ('!n!', 'my:==escaped:')",
+            | Token::StreamEnd                                  => "expected end of stream",
+            @ None                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn flow_scalar_single_simple()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "'hello world, single quoted flow scalar'";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                                      => "expected start of stream",
+            | Token::Scalar(cow!("hello world, single quoted flow scalar"), SingleQuote)    => "expected a flow scalar (single)",
+            | Token::StreamEnd                                                              => "expected end of stream",
+            @ None                                                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn flow_scalar_single_complex()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "'line0
+            line1
+            
+            line3
+            line4'";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
+            | Token::Scalar(cow!("line0 line1\nline3 line4"), SingleQuote)  => "expected a flow scalar (single)",
+            | Token::StreamEnd                                              => "expected end of stream",
+            @ None                                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn flow_scalar_double_simple()
+    {
+        use ScalarStyle::DoubleQuote;
+
+        let data = r#""line0 line1\nline3\tline4""#;
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
+            | Token::Scalar(cow!("line0 line1\nline3\tline4"), DoubleQuote) => "expected a flow scalar (double)",
+            | Token::StreamEnd                                              => "expected end of stream",
+            @ None                                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn flow_scalar_double_complex()
+    {
+        use ScalarStyle::DoubleQuote;
+
+        let data = r#""line0
+            lin\
+            e1
+            
+            line3
+            line4""#;
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
+            | Token::Scalar(cow!("line0 line1\nline3 line4"), DoubleQuote)  => "expected a flow scalar (double)",
+            | Token::StreamEnd                                              => "expected end of stream",
+            @ None                                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn tag_flow_scalar_complex()
+    {
+        use ScalarStyle::DoubleQuote;
+
+        let data = r#"
+        !!str
+        "line0
+            lin\
+            e1
+            
+            line3
+        line4""#;
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
+            | Token::Tag(cow!("!!"), cow!("str"))                           => "expected a secondary tag ('!!', 'str')",
+            | Token::Scalar(cow!("line0 line1\nline3 line4"), DoubleQuote)  => "expected a flow scalar (double)",
+            | Token::StreamEnd                                              => "expected end of stream",
+            @ None                                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn complex_no_map_sequence_scalar()
     {
         let data = r##"
@@ -751,7 +904,7 @@ mod tests
         let data = "   abc";
         let mut s = Scanner::new(data);
 
-        Scanner::eat_whitespace(&mut s.buffer, false);
+        s.eat_whitespace(false);
 
         assert_eq!(s.buffer, "abc");
     }
@@ -762,7 +915,7 @@ mod tests
         let data = "abc";
         let mut s = Scanner::new(data);
 
-        Scanner::eat_whitespace(&mut s.buffer, false);
+        s.eat_whitespace(false);
 
         assert_eq!(s.buffer, "abc");
     }
