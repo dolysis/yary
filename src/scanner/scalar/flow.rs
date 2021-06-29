@@ -272,9 +272,10 @@ mod tests
     {
         let data = "''";
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!(""), ScalarStyle::SingleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, scratch, true)?;
+        let (scalar, read) = scan_flow_scalar(data, stats, scratch, true)?;
 
         assert_eq!(read, 2);
 
@@ -291,9 +292,10 @@ mod tests
     {
         let data = "'hello world'";
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!("hello world"), ScalarStyle::SingleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, scratch, true)?;
+        let (scalar, read) = scan_flow_scalar(data, stats, scratch, true)?;
 
         assert_eq!(read, 13);
 
@@ -313,10 +315,11 @@ mod tests
             third
 fourth'"#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let cmp = "first second third fourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, scratch, true)?;
+        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, true)?;
 
         if !(scalar == expected)
         {
@@ -335,10 +338,11 @@ fourth'"#;
 
             fourth'"#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let cmp = "first second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, scratch, true)?;
+        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, true)?;
 
         if !(scalar == expected)
         {
@@ -351,13 +355,16 @@ fourth'"#;
     #[test]
     fn flow_single_reject_document()
     {
-        let data = ["'--- '", "'---\n'"];
+        let data = ["'\n--- '", "'\n---\n'"];
         let scratch = &mut Vec::new();
         let expected = ScanError::InvalidFlowScalar;
+        let mut stats;
 
         for (i, &t) in (&data).into_iter().enumerate()
         {
-            match scan_flow_scalar(t, scratch, true)
+            stats = MStats::new();
+
+            match scan_flow_scalar(t, &mut stats, scratch, true)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -378,10 +385,13 @@ fourth'"#;
         let data = ["'end space ", "'", "'end word"];
         let scratch = &mut Vec::new();
         let expected = ScanError::UnexpectedEOF;
+        let mut stats;
 
         for (i, &t) in (&data).into_iter().enumerate()
         {
-            match scan_flow_scalar(t, scratch, true)
+            stats = MStats::new();
+
+            match scan_flow_scalar(t, &mut stats, scratch, true)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -403,9 +413,10 @@ fourth'"#;
     {
         let data = r#""""#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!(""), ScalarStyle::DoubleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, scratch, false)?;
+        let (scalar, read) = scan_flow_scalar(data, stats, scratch, false)?;
 
         assert_eq!(read, 2);
 
@@ -422,9 +433,10 @@ fourth'"#;
     {
         let data = r#""hello world""#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!("hello world"), ScalarStyle::DoubleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, scratch, false)?;
+        let (scalar, read) = scan_flow_scalar(data, stats, scratch, false)?;
 
         assert_eq!(read, 13);
 
@@ -441,12 +453,13 @@ fourth'"#;
     {
         let data = r#""hello \U000003B1 \u03A9 \u30C3""#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let expected = Ref::Copy(Token::Scalar(
             cow!("hello α Ω ッ"),
             ScalarStyle::DoubleQuote,
         ));
 
-        let (scalar, read) = scan_flow_scalar(data, scratch, false)?;
+        let (scalar, read) = scan_flow_scalar(data, stats, scratch, false)?;
 
         if !(scalar == expected)
         {
@@ -472,10 +485,11 @@ fourth'"#;
             third
 fourth""#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let cmp = "first second third fourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, scratch, false)?;
+        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, false)?;
 
         if !(scalar == expected)
         {
@@ -494,10 +508,11 @@ fourth""#;
 
             fourth""#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let cmp = "first second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, scratch, false)?;
+        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, false)?;
 
         if !(scalar == expected)
         {
@@ -517,10 +532,11 @@ rst  \
 
             fourth""#;
         let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
         let cmp = "first  second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, scratch, false)?;
+        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, false)?;
 
         if !(scalar == expected)
         {
