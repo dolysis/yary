@@ -211,7 +211,7 @@ impl<'b> Scanner<'b>
             DirectiveKind::Tag =>
             {
                 // Chomp any spaces up to the handle
-                advance!(buffer, eat_whitespace(&mut buffer, false));
+                advance!(buffer, eat_whitespace(buffer, false));
 
                 // Scan the directive, copying if necessary
                 let (token, amt) = scan_tag_directive(buffer, scratch)?;
@@ -488,7 +488,7 @@ const ALIAS: u8 = b'*';
 const TAG: u8 = b'!';
 const SINGLE: u8 = b'\'';
 const DOUBLE: u8 = b'"';
-const BUG: &'static str = "LIBRARY BUG!! HIT AN UNREACHABLE STATEMENT";
+const BUG: &str = "LIBRARY BUG!! HIT AN UNREACHABLE STATEMENT";
 
 #[cfg(test)]
 mod tests
