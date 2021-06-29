@@ -2,6 +2,7 @@ use crate::{
     scanner::{
         error::{ScanError, ScanResult as Result},
         scalar::escape::flow_unescape,
+        MStats,
     },
     token::{Ref, ScalarStyle, Token},
 };
@@ -13,6 +14,7 @@ use crate::{
 /// into .scratch and borrow from that lifetime.
 pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
     base: &'b str,
+    stats: &mut MStats,
     scratch: &'c mut Vec<u8>,
     single: bool,
 ) -> Result<(Ref<'b, 'c>, usize)>
@@ -22,6 +24,8 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
     let mut buffer = base;
     let mut can_borrow = true;
     let mut escaped_break;
+    let mut whitespace: usize;
+    let mut lines: usize;
     let kind = match single
     {
         true => SingleQuote,
@@ -29,7 +33,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
     };
 
     // Eat left quote
-    advance!(buffer, 1);
+    advance!(buffer, :stats, 1);
 
     'scalar: loop
     {
@@ -38,13 +42,8 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
         // Even in a scalar context, YAML prohibits starting a line
         // with document stream tokens followed by a blank
         // character
-        //
-        // FIXME: this is currently incorrect, we also need to check
-        // that we are at the beginning of a line which would
-        // require us tracking columns.
-        //
-        // This should be fixed once I figure out how to do that
-        if check!(~buffer => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
+        if stats.column == 0
+            && check!(~buffer => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
             && isWhiteSpaceZ!(~buffer, 3)
         {
             return Err(ScanError::InvalidFlowScalar);
@@ -66,7 +65,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
                 set_no_borrow(&mut can_borrow, base, buffer, scratch);
 
                 scratch.push(SINGLE);
-                advance!(buffer, 2);
+                advance!(buffer, :stats, 2);
             }
             // We're done, we hit the right quote
             else if (kind == SingleQuote && check!(~buffer => [SINGLE, ..]))
@@ -82,7 +81,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
                 set_no_borrow(&mut can_borrow, base, buffer, scratch);
 
                 escaped_break = Some(EscapeState::Start);
-                advance!(buffer, 1);
+                advance!(buffer, :stats, 1);
             }
             // We've hit an escape sequence, parse it
             else if kind == DoubleQuote && check!(~buffer => [BACKSLASH, ..])
@@ -90,7 +89,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
                 set_no_borrow(&mut can_borrow, base, buffer, scratch);
 
                 let read = flow_unescape(buffer, scratch)?;
-                advance!(buffer, read);
+                advance!(buffer, :stats, read);
             }
             // Its a non blank character, add it
             else
@@ -100,12 +99,12 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
                     // Safety: !isBlankZ guarantees the slice is not empty
                     scratch.push(buffer.as_bytes()[0])
                 }
-                advance!(buffer, 1);
+                advance!(buffer, :stats, 1);
             }
         }
 
-        let mut whitespace: usize = 0;
-        let mut lines: usize = 0;
+        whitespace = 0;
+        lines = 0;
 
         #[rustfmt::skip]
         /*
@@ -139,7 +138,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
                         whitespace += 1;
                         scratch.push(buffer.as_bytes()[0]);
                     }
-                    advance!(buffer, 1);
+                    advance!(buffer, :stats, 1);
                 },
                 // Handle line breaks
                 (false, _) =>
@@ -155,7 +154,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
                     }
 
                     lines += 1;
-                    advance!(buffer, 1);
+                    advance!(buffer, :stats, @line);
                 },
             }
         }
@@ -223,7 +222,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
     };
 
     // Eat the right quote
-    advance!(buffer, 1);
+    advance!(buffer, :stats, 1);
 
     let advance = base.len() - buffer.len();
 
