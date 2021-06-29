@@ -11,7 +11,7 @@ use crate::{
 /// from .base. This function will attempt to borrow from
 /// the underlying .base, however it may be required to copy
 /// into .scratch and borrow from that lifetime.
-pub(super) fn scan_flow_scalar<'b, 'c>(
+pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
     base: &'b str,
     scratch: &'c mut Vec<u8>,
     single: bool,
