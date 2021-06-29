@@ -143,22 +143,23 @@ impl<'b> Scanner<'b>
 
     fn document_marker(&mut self) -> Option<Token<'b>>
     {
-        if self.buffer.starts_with("---")
+        if self.stats.column == 0 && isWhiteSpaceZ!(~self.buffer, 3)
         {
-            advance!(self.buffer, 3);
+            if self.buffer.starts_with("---")
+            {
+                advance!(self.buffer, :self.stats, 3);
 
-            Token::DocumentStart.into()
-        }
-        else if self.buffer.starts_with("...")
-        {
-            advance!(self.buffer, 3);
+                return Token::DocumentStart.into();
+            }
+            else if self.buffer.starts_with("...")
+            {
+                advance!(self.buffer, :self.stats, 3);
 
-            Token::DocumentEnd.into()
+                return Token::DocumentEnd.into();
+            }
         }
-        else
-        {
-            None
-        }
+
+        None
     }
 
     fn directive<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
