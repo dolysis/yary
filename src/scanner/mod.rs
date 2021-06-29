@@ -500,6 +500,9 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
     base.len() - buffer.len()
 }
 
+/// Vessel for tracking various stats about the underlying
+/// buffer that are required for correct parsing of certain
+/// elements, and when contextualizing an error.
 #[derive(Debug, Clone, PartialEq)]
 struct MStats
 {
