@@ -325,15 +325,15 @@ impl<'b> Scanner<'b>
     }
 }
 
-struct ScanIter<'b, 'c>
+struct ScanIter<'a, 'b, 'c>
 {
-    inner:   &'b mut Scanner<'b>,
+    inner:   &'a mut Scanner<'b>,
     scratch: &'c mut Vec<u8>,
 }
 
-impl<'b, 'c> ScanIter<'b, 'c>
+impl<'a, 'b, 'c> ScanIter<'a, 'b, 'c>
 {
-    pub fn new(inner: &'b mut Scanner<'b>, scratch: &'c mut Vec<u8>) -> Self
+    pub fn new(inner: &'a mut Scanner<'b>, scratch: &'c mut Vec<u8>) -> Self
     {
         Self { inner, scratch }
     }
