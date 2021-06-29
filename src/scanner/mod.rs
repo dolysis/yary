@@ -84,6 +84,11 @@ impl<'b> Scanner<'b>
                 tag @ Some(_) => Ok(tag),
                 None => unreachable!("{}: while scanning a tag", BUG),
             },
+            [SINGLE, ..] | [DOUBLE, ..] => match self.flow_scalar(scratch)?
+            {
+                fscalar @ Some(_) => Ok(fscalar),
+                None => unreachable!("{}: while parsing a flow scalar", BUG),
+            },
             _ => Ok(None),
         }
     }
@@ -300,6 +305,23 @@ impl<'b> Scanner<'b>
         advance!(self.buffer, self.buffer.len() - buffer.len());
 
         Ok(Some(token))
+    }
+
+    fn flow_scalar<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    {
+        let mut buffer = self.buffer;
+
+        if !check!(~buffer => [SINGLE, ..] | [DOUBLE, ..])
+        {
+            return Ok(None);
+        }
+
+        let (scalar, amt) = scan_flow_scalar(buffer, scratch, check!(~buffer => [SINGLE, ..]))?;
+        advance!(buffer, amt);
+
+        advance!(self.buffer, self.buffer.len() - buffer.len());
+
+        Ok(Some(scalar))
     }
 }
 
