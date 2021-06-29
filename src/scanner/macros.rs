@@ -4,29 +4,37 @@
 /// Rebinds .buffer's binding .amount or a @line break
 /// forward, optionally taking a .var to add .amount to.
 ///
+/// Can also be used to update scanner .stats
+///
 /// Care must be taken to ensure that @line is only used
 /// when you are sure that a YAML line break starts the
 /// given .buffer, as @line _will not advance_ the buffer at
 /// all if it is not a line break
 ///
 /// Modifiers
-///     <- .buffer := return .buffer->0...amount
+///     <- .buffer := return .buffer->0..amount
 ///
 /// Variants
 ///     /1 .buffer, .amount
 ///     /2 .buffer, .amount, .var
-///     /3 .buffer, @line
-///     /4 .buffer, @line, .var
+///     /3 .buffer, :.stats, .amount
+///     /4 .buffer, :.stats, .amount .var
+///     /5 .buffer, @line
+///     /6 .buffer, @line, .var
+///     /7 .buffer, :.stats, @line
+///     /8 .buffer, :.stats, @line .var
 macro_rules! advance {
-    ($buffer:expr, $amount:expr $(, $var:ident )? ) => {
+    ($buffer:expr, $( :$stats:expr, )? $amount:expr $(, $var:ident )? ) => {
         let (_, rest) = $buffer.split_at($amount);
+        $( $stats.update($amount, 0, $amount); )?
 
         $( advance!(@update $var, $amount); )?
 
         $buffer = rest
     };
-    (<- $buffer:expr, $amount:expr $(, $var:ident )? ) => {{
+    (<- $buffer:expr, $( :$stats:expr, )? $amount:expr $(, $var:ident )? ) => {{
         let (cut, rest) = $buffer.split_at($amount);
+        $( $stats.update($amount, 0, $amount); )?
 
         $buffer = rest;
 
@@ -34,17 +42,19 @@ macro_rules! advance {
 
         cut
     }};
-    ($buffer:expr, @line $(, $var:ident )? ) => {
+    ($buffer:expr, $( :$stats:expr, )? @line $(, $var:ident )? ) => {
         let amount = advance!(@amount $buffer);
         let (_, rest) = $buffer.split_at(amount);
+        $( $stats.update(amount, 1, 0); )?
 
         $buffer = rest;
 
         $( advance!(@update $var, $amount) )?
     };
-    (<- $buffer:expr, @line $(, $var:ident )? ) => {{
+    (<- $buffer:expr, $( :$stats:expr, )? @line $(, $var:ident )? ) => {{
         let amount = advance!(@amount $buffer);
         let (cut, rest) = $buffer.split_at(amount);
+        $( $stats.update(amount, 1, 0); )?
 
         $buffer = rest;
 
