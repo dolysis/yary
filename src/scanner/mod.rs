@@ -598,6 +598,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -614,6 +616,8 @@ mod tests
             | Token::StreamEnd,
             @ None
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -629,6 +633,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -642,6 +648,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -657,6 +665,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -671,6 +681,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -685,6 +697,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -697,6 +711,8 @@ mod tests
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
             > Result::<Token>::Err(ScanError::InvalidVersion)   => "expected an version directive error"
         );
+
+        assert_eq!(s.stats, stats_of(&data[0..0]));
     }
 
     #[test]
@@ -711,6 +727,8 @@ mod tests
             | Token::StreamEnd                                          => "expected end of stream",
             @ None                                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -725,6 +743,8 @@ mod tests
             | Token::StreamEnd                                      => "expected end of stream",
             @ None                                                  => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -739,6 +759,8 @@ mod tests
             | Token::StreamEnd                                          => "expected end of stream",
             @ None                                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -751,6 +773,8 @@ mod tests
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
             > Result::<Token>::Err(ScanError::UnexpectedEOF)    => "expected an eof error"
         );
+
+        assert_eq!(s.stats, stats_of(&data[0..0]));
     }
 
     #[test]
@@ -765,6 +789,8 @@ mod tests
             | Token::StreamEnd                                          => "expected end of stream",
             @ None                                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -779,6 +805,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -793,6 +821,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -807,7 +837,10 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
+
     #[test]
     fn tag_secondary()
     {
@@ -820,6 +853,8 @@ mod tests
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -834,6 +869,8 @@ mod tests
             | Token::StreamEnd                                  => "expected end of stream",
             @ None                                              => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -848,6 +885,8 @@ mod tests
             | Token::StreamEnd                                  => "expected end of stream",
             @ None                                              => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -864,6 +903,8 @@ mod tests
             | Token::StreamEnd                                                              => "expected end of stream",
             @ None                                                                          => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -884,6 +925,8 @@ mod tests
             | Token::StreamEnd                                              => "expected end of stream",
             @ None                                                          => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -900,6 +943,8 @@ mod tests
             | Token::StreamEnd                                              => "expected end of stream",
             @ None                                                          => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -921,6 +966,8 @@ mod tests
             | Token::StreamEnd                                              => "expected end of stream",
             @ None                                                          => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -945,6 +992,8 @@ mod tests
             | Token::StreamEnd                                              => "expected end of stream",
             @ None                                                          => "expected stream to be finished"
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -982,6 +1031,8 @@ mod tests
             | Token::StreamEnd,
             @ None
         );
+
+        assert_eq!(s.stats, stats_of(data));
     }
 
     #[test]
@@ -993,6 +1044,7 @@ mod tests
         s.eat_whitespace(false);
 
         assert_eq!(s.buffer, "abc");
+        assert_eq!(s.stats, (3, 0, 3))
     }
 
     #[test]
@@ -1004,5 +1056,44 @@ mod tests
         s.eat_whitespace(false);
 
         assert_eq!(s.buffer, "abc");
+        assert_eq!(s.stats, (0, 0, 0))
+    }
+
+    /// Calculate what the stats of a given slice should be
+    fn stats_of(base: &str) -> MStats
+    {
+        let mut buffer = base;
+        let mut stats = MStats::new();
+
+        loop
+        {
+            if check!(~buffer => [])
+            {
+                break;
+            }
+            else if isBlank!(~buffer)
+            {
+                advance!(buffer, :stats, 1);
+            }
+            else if isBreak!(~buffer)
+            {
+                advance!(buffer, :stats, @line);
+            }
+            else
+            {
+                let skip = match buffer.as_bytes()[0]
+                {
+                    o if (o & 0x80) == 0x00 => 1,
+                    o if (o & 0xE0) == 0xC0 => 2,
+                    o if (o & 0xF0) == 0xE0 => 3,
+                    o if (o & 0xF8) == 0xF0 => 4,
+                    _ => unreachable!(),
+                };
+
+                advance!(buffer, :stats, skip);
+            }
+        }
+
+        stats
     }
 }
