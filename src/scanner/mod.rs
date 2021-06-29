@@ -24,6 +24,7 @@ use crate::{
 struct Scanner<'b>
 {
     buffer: &'b str,
+    stats:  MStats,
     state:  StreamState,
 }
 
@@ -33,6 +34,7 @@ impl<'b> Scanner<'b>
     {
         Self {
             buffer: data,
+            stats:  MStats::new(),
             state:  StreamState::Start,
         }
     }
@@ -129,8 +131,12 @@ impl<'b> Scanner<'b>
     /// beginning of the new token
     fn eat_whitespace(&mut self, comments: bool) -> usize
     {
-        let amt = eat_whitespace(&self.buffer, comments);
+        let mut stats = MStats::new();
+
+        let amt = eat_whitespace(&self.buffer, &mut stats, comments);
+
         advance!(self.buffer, amt);
+        self.stats += stats;
 
         amt
     }
@@ -440,7 +446,7 @@ where
 /// Chomp whitespace and .comments if allowed until a non
 /// whitespace character is encountered, returning the
 /// amount chomped
-fn eat_whitespace(base: &str, comments: bool) -> usize
+fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
 {
     let mut buffer = base;
     let mut chomp_line = false;
@@ -473,11 +479,11 @@ fn eat_whitespace(base: &str, comments: bool) -> usize
 
         if brk
         {
-            advance!(buffer, @line);
+            advance!(buffer, :stats, @line);
         }
         else
         {
-            advance!(buffer, 1);
+            advance!(buffer, :stats, 1);
         }
     }
 
