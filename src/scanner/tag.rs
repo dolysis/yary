@@ -202,8 +202,6 @@ pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
             // Single ! without a suffix disables tag resolution
             Some((TagHandle::Primary(h), amt)) =>
             {
-                advance!(buffer, :stats, 1);
-
                 (Token::Tag(cow!(h), cow!(&buffer[0..0])).borrowed(), amt)
             },
             // !!global "node" OR !named!global "node"

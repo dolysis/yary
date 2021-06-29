@@ -893,6 +893,22 @@ mod tests
     }
 
     #[test]
+    fn tag_non_resolving()
+    {
+        let data = "! ";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            | Token::Tag(cow!("!"), cow!(""))                   => "expected a non resolving tag ('!', '')",
+            | Token::StreamEnd                                  => "expected end of stream",
+            @ None                                              => "expected stream to be finished"
+        );
+
+        assert_eq!(s.stats, (2, 0, 2));
+    }
+
+    #[test]
     fn flow_scalar_single_simple()
     {
         use ScalarStyle::SingleQuote;
