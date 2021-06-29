@@ -268,6 +268,7 @@ impl<'b> Scanner<'b>
     fn anchor(&mut self) -> Result<Option<Token<'b>>>
     {
         let mut buffer = self.buffer;
+        let mut stats = MStats::new();
 
         // *anchor 'rest of the line'
         // ^
@@ -280,13 +281,13 @@ impl<'b> Scanner<'b>
             _ => return Ok(None),
         };
 
-        advance!(buffer, 1);
+        advance!(buffer, :stats, 1);
 
         // *anchor 'rest of the line'
         //  ^^^^^^
         let anchor = take_while(buffer.as_bytes(), u8::is_ascii_alphanumeric);
 
-        let anchor = advance!(<- buffer, anchor.len());
+        let anchor = advance!(<- buffer, :stats, anchor.len());
 
         // anchor name cannot be empty, must contain >= 1
         // alphanumeric character
@@ -316,6 +317,7 @@ impl<'b> Scanner<'b>
         //        ^^^^^^^^^^^^^^^^^^^ buffer.len
         // ^^^^^^^ self.buffer.len - buffer.len
         advance!(self.buffer, self.buffer.len() - buffer.len());
+        self.stats += stats;
 
         Ok(Some(token))
     }
