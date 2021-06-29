@@ -11,7 +11,10 @@ use atoi::atoi;
 
 use self::error::{ScanError, ScanResult as Result};
 use crate::{
-    scanner::tag::scan_tag_directive,
+    scanner::{
+        scalar::flow::scan_flow_scalar,
+        tag::{scan_node_tag, scan_tag_directive},
+    },
     token::{Ref, StreamEncoding, Token},
 };
 
@@ -39,7 +42,7 @@ impl<'b> Scanner<'b>
             return Ok(begin.borrowed().into());
         }
 
-        Self::eat_whitespace(&mut self.buffer, true);
+        self.eat_whitespace(true);
 
         if let Some(end) = self.stream_end()
         {
@@ -51,17 +54,38 @@ impl<'b> Scanner<'b>
             return Ok(document.borrowed().into());
         }
 
-        if let directive @ Some(_) = self.directive(scratch)?
+        /*
+         * The borrow checker currently does not understand that
+         * each "if let ..." above is terminal, and complains
+         * that possible multi mutable borrows of .scratch can
+         * occur. Its wrong, but I can't convince it the
+         * pattern is safe, so the best I can do is to lift the
+         * actual checks each function performs up into a
+         * match statement that the compiler understands
+         * is terminal.
+         *
+         * Hopefully in future this issue will be resolved and I
+         * can remove this match in favour of if guards
+         */
+        match self.buffer.as_bytes()
         {
-            return Ok(directive);
+            [DIRECTIVE, ..] => match self.directive(scratch)?
+            {
+                directive @ Some(_) => Ok(directive),
+                None => unreachable!("{}: while scanning a directive", BUG),
+            },
+            [ANCHOR, ..] | [ALIAS, ..] => match self.anchor()?
+            {
+                Some(token) => Ok(Some(token.borrowed())),
+                None => unreachable!("{}: while scanning an anchor", BUG),
+            },
+            [TAG, ..] => match self.tag(scratch)?
+            {
+                tag @ Some(_) => Ok(tag),
+                None => unreachable!("{}: while scanning a tag", BUG),
+            },
+            _ => Ok(None),
         }
-
-        if let Some(anchor) = self.anchor()?
-        {
-            return Ok(anchor.borrowed().into());
-        }
-
-        Ok(None)
     }
 
     fn start_stream(&mut self) -> Option<Token<'b>>
@@ -96,10 +120,10 @@ impl<'b> Scanner<'b>
     /// Chomp whitespace and optionally comments until we
     /// reach the next token, updating buffer[0] to the
     /// beginning of the new token
-    fn eat_whitespace(buffer: &mut &str, comments: bool) -> usize
+    fn eat_whitespace(&mut self, comments: bool) -> usize
     {
-        let amt = eat_whitespace(&buffer, comments);
-        advance!(*buffer, amt);
+        let amt = eat_whitespace(&self.buffer, comments);
+        advance!(self.buffer, amt);
 
         amt
     }
@@ -128,7 +152,7 @@ impl<'b> Scanner<'b>
     {
         let mut buffer = self.buffer;
 
-        if !check!(~buffer => b'%')
+        if !check!(~buffer => [DIRECTIVE, ..])
         {
             return Ok(None);
         }
@@ -149,7 +173,7 @@ impl<'b> Scanner<'b>
             DirectiveKind::Version =>
             {
                 // Chomp any preceding whitespace
-                Self::eat_whitespace(&mut buffer, false);
+                advance!(buffer, eat_whitespace(buffer, false));
 
                 // %YAML 1.1
                 //       ^
@@ -200,6 +224,29 @@ impl<'b> Scanner<'b>
         Ok(Some(token))
     }
 
+    /// Try eat a tag, returning a Token if one could be
+    /// found at the current buffer head, or none if one
+    /// couldn't.
+    fn tag<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    {
+        let mut buffer = self.buffer;
+
+        if !check!(~buffer => [TAG, ..])
+        {
+            return Ok(None);
+        }
+
+        let (token, amt) = scan_node_tag(buffer, scratch)?;
+        advance!(buffer, amt);
+
+        // !named_tag!type-suffix "my tagged value"
+        //                       ^^^^^^^^^^^^^^^^^^ buffer
+        // ^^^^^^^^^^^^^^^^^^^^^^ self.buffer.len - buffer.len
+        advance!(self.buffer, self.buffer.len() - buffer.len());
+
+        Ok(Some(token))
+    }
+
     fn anchor(&mut self) -> Result<Option<Token<'b>>>
     {
         let mut buffer = self.buffer;
@@ -208,7 +255,7 @@ impl<'b> Scanner<'b>
         // ^
         let kind = match buffer.as_bytes()
         {
-            [b @ b'*', ..] | [b @ b'&', ..] =>
+            [b @ ALIAS, ..] | [b @ ANCHOR, ..] =>
             {
                 AnchorKind::new(b).expect("we only bind * or & so this cannot fail")
             },
@@ -412,6 +459,14 @@ fn eat_whitespace(base: &str, comments: bool) -> usize
 
     base.len() - buffer.len()
 }
+
+const DIRECTIVE: u8 = b'%';
+const ANCHOR: u8 = b'&';
+const ALIAS: u8 = b'*';
+const TAG: u8 = b'!';
+const SINGLE: u8 = b'\'';
+const DOUBLE: u8 = b'"';
+const BUG: &'static str = "LIBRARY BUG!! HIT AN UNREACHABLE STATEMENT";
 
 #[cfg(test)]
 mod tests
