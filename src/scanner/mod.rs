@@ -165,6 +165,7 @@ impl<'b> Scanner<'b>
     fn directive<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
         let mut buffer = self.buffer;
+        let mut stats = MStats::new();
 
         if !check!(~buffer => [DIRECTIVE, ..])
         {
@@ -180,20 +181,20 @@ impl<'b> Scanner<'b>
         let kind = DirectiveKind::new(&buffer[1..])?;
 
         // '%' + 'YAML' or 'TAG'
-        advance!(buffer, 1 + kind.len());
+        advance!(buffer, :stats, 1 + kind.len());
 
         let token = match kind
         {
             DirectiveKind::Version =>
             {
                 // Chomp any preceding whitespace
-                advance!(buffer, eat_whitespace(buffer, false));
+                advance!(buffer, eat_whitespace(buffer, &mut stats, false));
 
                 // %YAML 1.1
                 //       ^
                 let (major, skip) = scan_directive_version(buffer)?;
 
-                advance!(buffer, skip);
+                advance!(buffer, :stats, skip);
 
                 // %YAML 1.1
                 //        ^
@@ -201,7 +202,7 @@ impl<'b> Scanner<'b>
                 {
                     [b'.', ..] =>
                     {
-                        advance!(buffer, 1);
+                        advance!(buffer, :stats, 1);
 
                         Ok(())
                     },
@@ -213,7 +214,7 @@ impl<'b> Scanner<'b>
                 //         ^
                 let (minor, skip) = scan_directive_version(buffer)?;
 
-                advance!(buffer, skip);
+                advance!(buffer, :stats, skip);
 
                 Token::VersionDirective(major, minor).borrowed()
             },
