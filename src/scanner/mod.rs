@@ -1016,6 +1016,23 @@ mod tests
     }
 
     #[test]
+    fn implicit_key_simple()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "'key': ";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn complex_no_map_sequence_scalar()
     {
         let data = r##"
