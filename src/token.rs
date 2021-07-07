@@ -161,7 +161,7 @@ pub enum StreamEncoding
     UTF8,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScalarStyle
 {
     Plain,
