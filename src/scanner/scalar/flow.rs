@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::{
     scanner::{
         error::{ScanError, ScanResult as Result},
@@ -12,12 +14,12 @@ use crate::{
 /// from .base. This function will attempt to borrow from
 /// the underlying .base, however it may be required to copy
 /// into .scratch and borrow from that lifetime.
-pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
-    base: &'b str,
+pub(in crate::scanner) fn scan_flow_scalar(
+    base: &str,
     stats: &mut MStats,
-    scratch: &'c mut Vec<u8>,
+    scratch: &mut Vec<u8>,
     single: bool,
-) -> Result<(Ref<'b, 'c>, usize)>
+) -> Result<(ScalarRange, usize)>
 {
     use ScalarStyle::{DoubleQuote, SingleQuote};
 
@@ -26,6 +28,7 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
     let mut escaped_break;
     let mut whitespace: usize;
     let mut lines: usize;
+    let scratch_start = scratch.len();
     let kind = match single
     {
         true => SingleQuote,
@@ -194,32 +197,12 @@ pub(in crate::scanner) fn scan_flow_scalar<'b, 'c>(
         }
     }
 
-    // Retrieve the token slice, either from the .base slice, or
-    // if we couldn't borrow, the .scratch space
-    let token = if can_borrow
+    let range = match can_borrow
     {
-        // Safety: we must be on a code point boundary, as the only
-        // way can get to this section is:
-        //
-        // 1. .base->0 must be a quote
-        // 2. .base->.base.len() - .buffer.len() must be a quote
-        // 3. .base must be valid UTF8 (its a str)
-        let fragment = &base[1..base.len() - buffer.len()];
-        let token = Token::Scalar(cow!(fragment), kind);
-
-        Ref::Borrow(token)
-    }
-    else
-    {
-        // Safety: characters added to scratch are either:
-        //
-        // A. added from a str (.base)
-        // B. Unescaped into valid UTF8
-        let fragment = std::str::from_utf8(scratch).unwrap();
-        let token = Token::Scalar(cow!(fragment), kind);
-
-        Ref::Copy(token)
+        true => 1..base.len() - buffer.len(),
+        false => scratch_start..scratch.len(),
     };
+    let token = ScalarRange::new(range, kind, can_borrow);
 
     // Eat the right quote
     advance!(buffer, :stats, 1);
@@ -240,6 +223,47 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
     }
 
     *can_borrow = false
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::scanner) struct ScalarRange
+{
+    range:  Range<usize>,
+    style:  ScalarStyle,
+    borrow: bool,
+}
+
+impl ScalarRange
+{
+    pub fn new(range: Range<usize>, style: ScalarStyle, borrow: bool) -> Self
+    {
+        Self {
+            range,
+            style,
+            borrow,
+        }
+    }
+
+    pub fn into_token<'b, 'c>(&self, base: &'b str, scratch: &'c mut Vec<u8>)
+        -> Result<Ref<'b, 'c>>
+    {
+        match self.borrow
+        {
+            true =>
+            {
+                let fragment = &base[self.range.clone()];
+
+                Ok(Token::Scalar(cow!(fragment), self.style.clone()).borrowed())
+            },
+            false =>
+            {
+                let slice = &scratch[self.range.clone()];
+                let fragment = std::str::from_utf8(slice).unwrap();
+
+                Ok(Token::Scalar(cow!(fragment), self.style.clone()).copied())
+            },
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -275,7 +299,8 @@ mod tests
         let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!(""), ScalarStyle::SingleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let (range, read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let scalar = range.into_token(data, scratch)?;
 
         assert_eq!(read, 2);
 
@@ -295,7 +320,8 @@ mod tests
         let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!("hello world"), ScalarStyle::SingleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let (range, read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let scalar = range.into_token(data, scratch)?;
 
         assert_eq!(read, 13);
 
@@ -319,7 +345,8 @@ fourth'"#;
         let cmp = "first second third fourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let scalar = range.into_token(data, scratch)?;
 
         if !(scalar == expected)
         {
@@ -342,7 +369,8 @@ fourth'"#;
         let cmp = "first second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let scalar = range.into_token(data, scratch)?;
 
         if !(scalar == expected)
         {
@@ -365,13 +393,14 @@ fourth'"#;
             stats = MStats::new();
 
             match scan_flow_scalar(t, &mut stats, scratch, true)
+                .and_then(|(r, _)| r.into_token(t, scratch))
             {
                 Err(e) => assert_eq!(
                     e, expected,
                     "on iteration {}, expected error {}, got {}",
                     i, expected, e
                 ),
-                Ok((unexpected, _)) => panic!(
+                Ok(unexpected) => panic!(
                     "on iteration {}, expected error {}, got unexpected value {:?}",
                     i, expected, unexpected
                 ),
@@ -392,13 +421,14 @@ fourth'"#;
             stats = MStats::new();
 
             match scan_flow_scalar(t, &mut stats, scratch, true)
+                .and_then(|(r, _)| r.into_token(t, scratch))
             {
                 Err(e) => assert_eq!(
                     e, expected,
                     "on iteration {}, expected error {}, got {}",
                     i, expected, e
                 ),
-                Ok((unexpected, _)) => panic!(
+                Ok(unexpected) => panic!(
                     "on iteration {}, expected error {}, got unexpected value {:?}",
                     i, expected, unexpected
                 ),
@@ -416,7 +446,8 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!(""), ScalarStyle::DoubleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let (range, read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
 
         assert_eq!(read, 2);
 
@@ -436,7 +467,8 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Ref::Borrow(Token::Scalar(cow!("hello world"), ScalarStyle::DoubleQuote));
 
-        let (scalar, read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let (range, read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
 
         assert_eq!(read, 13);
 
@@ -459,7 +491,8 @@ fourth'"#;
             ScalarStyle::DoubleQuote,
         ));
 
-        let (scalar, read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let (range, read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
 
         if !(scalar == expected)
         {
@@ -489,7 +522,8 @@ fourth""#;
         let cmp = "first second third fourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
 
         if !(scalar == expected)
         {
@@ -512,7 +546,8 @@ fourth""#;
         let cmp = "first second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
 
         if !(scalar == expected)
         {
@@ -536,7 +571,8 @@ rst  \
         let cmp = "first  second third\nfourth";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
-        let (scalar, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
 
         if !(scalar == expected)
         {
