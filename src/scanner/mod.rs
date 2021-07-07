@@ -4,6 +4,7 @@
 mod macros;
 
 mod error;
+mod key;
 mod scalar;
 mod tag;
 
@@ -11,7 +12,10 @@ use std::ops::{Add, AddAssign};
 
 use atoi::atoi;
 
-use self::error::{ScanError, ScanResult as Result};
+use self::{
+    error::{ScanError, ScanResult as Result},
+    key::Key,
+};
 use crate::{
     scanner::{
         scalar::flow::scan_flow_scalar,
@@ -26,6 +30,7 @@ struct Scanner<'b>
     buffer: &'b str,
     stats:  MStats,
     state:  StreamState,
+    key:    Key,
 }
 
 impl<'b> Scanner<'b>
@@ -36,17 +41,41 @@ impl<'b> Scanner<'b>
             buffer: data,
             stats:  MStats::new(),
             state:  StreamState::Start,
+            key:    Key::default(),
         }
     }
 
     fn next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
+        if self.key.has_tokens()
+        {
+            match self.key.next_token(self.buffer, scratch)?
+            {
+                Some((token, amt)) =>
+                {
+                    advance!(self.buffer, :self.stats, amt);
+
+                    Ok(Some(token))
+                },
+                _ => unreachable!("{}: while parsing a key sequence", BUG),
+            }
+        }
+        else
+        {
+            self.scan_next_token(scratch)
+        }
+    }
+
+    fn scan_next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    {
+        self.reset_stale_key();
+
         if let Some(begin) = self.start_stream()
         {
             return Ok(begin.borrowed().into());
         }
 
-        self.eat_whitespace(true);
+        self.eat_whitespace(COMMENTS);
 
         if let Some(end) = self.stream_end()
         {
@@ -93,6 +122,11 @@ impl<'b> Scanner<'b>
                 fscalar @ Some(_) => Ok(fscalar),
                 None => unreachable!("{}: while parsing a flow scalar", BUG),
             },
+            [VALUE, ..] if isWhiteSpaceZ!(~self.buffer, 1) => match self.value()?
+            {
+                value @ Some(_) => Ok(value),
+                None => unreachable!("{}: while parsing a value", BUG),
+            },
             _ => Ok(None),
         }
     }
@@ -103,6 +137,9 @@ impl<'b> Scanner<'b>
         {
             StreamState::Start =>
             {
+                // A key is allowed at the beginning of the stream
+                self.key.possible(!REQUIRED);
+
                 self.state = StreamState::Stream;
 
                 Some(Token::StreamStart(StreamEncoding::UTF8))
@@ -135,6 +172,15 @@ impl<'b> Scanner<'b>
 
         let amt = eat_whitespace(&self.buffer, &mut stats, comments);
 
+        // A new line may start a key in the block context
+        //
+        // FIXME: we don't track flow/block contexts yet, add check
+        // here when we do
+        if stats.lines != 0
+        {
+            self.key.possible(!REQUIRED);
+        }
+
         advance!(self.buffer, amt);
         self.stats += stats;
 
@@ -145,18 +191,20 @@ impl<'b> Scanner<'b>
     {
         if self.stats.column == 0 && isWhiteSpaceZ!(~self.buffer, 3)
         {
-            if self.buffer.starts_with("---")
+            let token = match self.buffer.as_bytes()
             {
-                advance!(self.buffer, :self.stats, 3);
+                [b'-', b'-', b'-', ..] => Token::DocumentStart,
+                [b'.', b'.', b'.', ..] => Token::DocumentEnd,
+                _ => return None,
+            };
 
-                return Token::DocumentStart.into();
-            }
-            else if self.buffer.starts_with("...")
-            {
-                advance!(self.buffer, :self.stats, 3);
+            // A key cannot follow a document marker
+            // (though a scalar can)
+            self.key.impossible();
 
-                return Token::DocumentEnd.into();
-            }
+            advance!(self.buffer, :self.stats, 3);
+
+            return Some(token);
         }
 
         None
@@ -188,32 +236,21 @@ impl<'b> Scanner<'b>
             DirectiveKind::Version =>
             {
                 // Chomp any preceding whitespace
-                advance!(buffer, eat_whitespace(buffer, &mut stats, false));
+                advance!(buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
 
                 // %YAML 1.1
                 //       ^
                 let (major, skip) = scan_directive_version(buffer)?;
-
                 advance!(buffer, :stats, skip);
 
                 // %YAML 1.1
                 //        ^
-                match buffer.as_bytes()
-                {
-                    [b'.', ..] =>
-                    {
-                        advance!(buffer, :stats, 1);
-
-                        Ok(())
-                    },
-                    [] => Err(ScanError::UnexpectedEOF),
-                    _ => Err(ScanError::InvalidVersion),
-                }?;
+                check!(~buffer => b'.', else ScanError::InvalidVersion)?;
+                advance!(buffer, :stats, 1);
 
                 // %YAML 1.1
                 //         ^
                 let (minor, skip) = scan_directive_version(buffer)?;
-
                 advance!(buffer, :stats, skip);
 
                 Token::VersionDirective(major, minor).borrowed()
@@ -221,7 +258,7 @@ impl<'b> Scanner<'b>
             DirectiveKind::Tag =>
             {
                 // Chomp any spaces up to the handle
-                advance!(buffer, eat_whitespace(buffer, &mut stats, false));
+                advance!(buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
 
                 // Scan the directive, copying if necessary
                 let (token, amt) = scan_tag_directive(buffer, &mut stats, scratch)?;
@@ -230,6 +267,9 @@ impl<'b> Scanner<'b>
                 token
             },
         };
+
+        // A key cannot follow a directive
+        self.key.impossible();
 
         // %YAML 1.1 # some comment\n
         //          ^^^^^^^^^^^^^^^^^ buffer
@@ -255,6 +295,9 @@ impl<'b> Scanner<'b>
 
         let (token, amt) = scan_node_tag(buffer, &mut stats, scratch)?;
         advance!(buffer, amt);
+
+        // A key is possible after a tag
+        self.key.possible(!REQUIRED);
 
         // !named_tag!type-suffix "my tagged value"
         //                       ^^^^^^^^^^^^^^^^^^ buffer
@@ -313,6 +356,9 @@ impl<'b> Scanner<'b>
             AnchorKind::Anchor => Token::Anchor(cow!(anchor)),
         };
 
+        // A key is possible after an anchor or alias
+        self.key.possible(!REQUIRED);
+
         // *anchor 'rest of the line'
         //        ^^^^^^^^^^^^^^^^^^^ buffer.len
         // ^^^^^^^ self.buffer.len - buffer.len
@@ -326,20 +372,87 @@ impl<'b> Scanner<'b>
     {
         let mut buffer = self.buffer;
         let mut stats = MStats::new();
+        let single = check!(~buffer => [SINGLE, ..]);
 
         if !check!(~buffer => [SINGLE, ..] | [DOUBLE, ..])
         {
             return Ok(None);
         }
 
-        let (scalar, amt) =
-            scan_flow_scalar(buffer, &mut stats, scratch, check!(~buffer => [SINGLE, ..]))?;
+        let (range, amt) = scan_flow_scalar(buffer, &mut stats, scratch, single)?;
+
+        if self.key.allowed() && check_is_key(&buffer[amt..])
+        {
+            self.key.impossible();
+
+            self.key.save(range, amt);
+
+            let (token, amt) = self.key.next_token(buffer, scratch)?.unwrap();
+            advance!(self.buffer, :self.stats, amt);
+
+            return Ok(Some(token));
+        }
+
+        let token = range.into_token(buffer, scratch)?;
         advance!(buffer, amt);
+
+        // A key cannot follow a flow scalar, as we're either
+        // currently in a key (which should be followed by a
+        // value), or a value which needs a separator before
+        // another key is legal
+        self.key.impossible();
 
         advance!(self.buffer, self.buffer.len() - buffer.len());
         self.stats += stats;
 
-        Ok(Some(scalar))
+        Ok(Some(token))
+    }
+
+    fn value(&mut self) -> Result<Option<Ref<'b, 'static>>>
+    {
+        let mut buffer = self.buffer;
+        let mut stats = MStats::new();
+
+        if !(check!(~buffer => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1))
+        {
+            return Ok(None);
+        }
+
+        let token = Token::Value.borrowed();
+        advance!(buffer, :stats, 1);
+
+        // A key cannot follow a value
+        self.key.impossible();
+
+        advance!(self.buffer, self.buffer.len() - buffer.len());
+        self.stats += stats;
+
+        Ok(Some(token))
+    }
+
+    fn reset_stale_key(&mut self)
+    {
+        /*
+         * The YAML spec requires that an implicit key cannot
+         * exceed 1024 characters, and must be contained to
+         * a single line
+         *
+         * https://yaml.org/spec/1.2/spec.html#ns-s-implicit-yaml-key(c)
+         *
+         * P.S: scroll up 10 lines
+         */
+
+        let exceeded_max_len = self
+            .stats
+            .read
+            .checked_sub(self.key.mark)
+            .filter(|diff| *diff > 1024)
+            .is_some();
+
+        if exceeded_max_len || self.key.line != self.stats.lines
+        {
+            self.key = Key::new(self.stats.read, self.stats.lines)
+        }
     }
 }
 
@@ -358,7 +471,7 @@ impl<'a, 'b, 'c> ScanIter<'a, 'b, 'c>
 
     pub fn next(&mut self) -> Option<Result<Ref<'_, '_>>>
     {
-        self.inner.next_token(self.scratch).transpose()
+        dbg!(self.inner.next_token(self.scratch).transpose())
     }
 }
 
@@ -500,6 +613,16 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
     base.len() - buffer.len()
 }
 
+fn check_is_key(buffer: &str) -> bool
+{
+    let amt = eat_whitespace(buffer, &mut MStats::new(), !COMMENTS);
+
+    // FIXME: we need to support io::Read based buffers,
+    // and need some way to hint that the buffer should
+    // contain <N> more bytes, fetching them if required
+    check!(~buffer, amt => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1)
+}
+
 /// Vessel for tracking various stats about the underlying
 /// buffer that are required for correct parsing of certain
 /// elements, and when contextualizing an error.
@@ -577,6 +700,10 @@ const ALIAS: u8 = b'*';
 const TAG: u8 = b'!';
 const SINGLE: u8 = b'\'';
 const DOUBLE: u8 = b'"';
+const VALUE: u8 = b':';
+
+const COMMENTS: bool = true;
+const REQUIRED: bool = true;
 const BUG: &str = "LIBRARY BUG!! HIT AN UNREACHABLE STATEMENT";
 
 #[cfg(test)]
@@ -1027,6 +1154,7 @@ mod tests
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
             | Token::Key                                => "expected an implicit key",
             | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
+            | Token::Value                              => "expected a value token",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
