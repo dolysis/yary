@@ -357,6 +357,27 @@ fourth'"#;
     }
 
     #[test]
+    fn flow_single_trim_whitespace() -> TestResult
+    {
+        let data = r#"'first     
+            second'"#;
+        let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
+        let cmp = "first second";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote));
+
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, true)?;
+        let scalar = range.into_token(data, scratch)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn flow_single_fold_newline() -> TestResult
     {
         let data = r#"'first
@@ -544,6 +565,27 @@ fourth""#;
         let scratch = &mut Vec::new();
         let stats = &mut MStats::new();
         let cmp = "first second third\nfourth";
+        let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
+
+        let (range, _read) = scan_flow_scalar(data, stats, scratch, false)?;
+        let scalar = range.into_token(data, scratch)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_double_trim_whitespace() -> TestResult
+    {
+        let data = r#""first        
+            second""#;
+        let scratch = &mut Vec::new();
+        let stats = &mut MStats::new();
+        let cmp = "first second";
         let expected = Ref::Copy(Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote));
 
         let (range, _read) = scan_flow_scalar(data, stats, scratch, false)?;
