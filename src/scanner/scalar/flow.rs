@@ -138,9 +138,9 @@ pub(in crate::scanner) fn scan_flow_scalar(
                 {
                     if !can_borrow
                     {
-                        whitespace += 1;
                         scratch.push(buffer.as_bytes()[0]);
                     }
+                    whitespace += 1;
                     advance!(buffer, :stats, 1);
                 },
                 // Handle line breaks
