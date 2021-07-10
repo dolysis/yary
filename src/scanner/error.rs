@@ -16,6 +16,9 @@ pub enum ScanError
     ///         ^
     MissingMinor,
 
+    /// A value was expected, but not found
+    MissingValue,
+
     /// A directive major or minor digit was not 0..=9
     InvalidVersion,
 

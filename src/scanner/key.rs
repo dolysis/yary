@@ -35,7 +35,7 @@ impl Key
             true => NextKey::Required,
             false => NextKey::Possible,
         }
-        .into()
+        .into();
     }
 
     /// A key is impossible / illegal at the current stream
@@ -57,6 +57,7 @@ impl Key
         self.next.as_ref().map(|s| s.required()).unwrap_or(false)
     }
 
+    /// Save a scalar token, starting a token sequence
     pub fn save(&mut self, r: ScalarRange, advance: usize)
     {
         self.state = Some(KeyState::new(r, advance))
