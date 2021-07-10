@@ -68,7 +68,9 @@ impl<'b> Scanner<'b>
 
     fn scan_next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
-        self.reset_stale_key();
+        dbg!(self.key.allowed());
+        self.reset_stale_key()?;
+        dbg!(self.key.allowed());
 
         if let Some(begin) = self.start_stream()
         {
@@ -139,6 +141,7 @@ impl<'b> Scanner<'b>
             {
                 // A key is allowed at the beginning of the stream
                 self.key.possible(!REQUIRED);
+                self.key.line = self.stats.lines;
 
                 self.state = StreamState::Stream;
 
@@ -198,11 +201,11 @@ impl<'b> Scanner<'b>
                 _ => return None,
             };
 
+            advance!(self.buffer, :self.stats, 3);
+
             // A key cannot follow a document marker
             // (though a scalar can)
             self.key.impossible();
-
-            advance!(self.buffer, :self.stats, 3);
 
             return Some(token);
         }
@@ -268,7 +271,7 @@ impl<'b> Scanner<'b>
             },
         };
 
-        // A key cannot follow a directive
+        // A key cannot follow a directive (a newline is required)
         self.key.impossible();
 
         // %YAML 1.1 # some comment\n
@@ -381,25 +384,33 @@ impl<'b> Scanner<'b>
 
         let (range, amt) = scan_flow_scalar(buffer, &mut stats, scratch, single)?;
 
-        if self.key.allowed() && check_is_key(&buffer[amt..])
+        // If we found a key, save the scalar
+        let token = if dbg!(self.key.allowed()) && check_is_key(&buffer[amt..])
         {
-            self.key.impossible();
-
+            // reset stats, save the scalar
+            stats = MStats::new();
             self.key.save(range, amt);
 
+            // Safety: we just saved a token, so there is >= 1 token
+            // remaining
             let (token, amt) = self.key.next_token(buffer, scratch)?.unwrap();
-            advance!(self.buffer, :self.stats, amt);
+            advance!(buffer, :stats, amt);
 
-            return Ok(Some(token));
+            token
         }
+        // otherwise return the scalar
+        else
+        {
+            let token = range.into_token(buffer, scratch)?;
+            advance!(buffer, amt);
 
-        let token = range.into_token(buffer, scratch)?;
-        advance!(buffer, amt);
+            token
+        };
 
         // A key cannot follow a flow scalar, as we're either
         // currently in a key (which should be followed by a
-        // value), or a value which needs a separator before
-        // another key is legal
+        // value), or a value which needs a separator (e.g line
+        // break) before another key is legal
         self.key.impossible();
 
         advance!(self.buffer, self.buffer.len() - buffer.len());
@@ -430,7 +441,7 @@ impl<'b> Scanner<'b>
         Ok(Some(token))
     }
 
-    fn reset_stale_key(&mut self)
+    fn reset_stale_key(&mut self) -> Result<()>
     {
         /*
          * The YAML spec requires that an implicit key cannot
@@ -442,17 +453,27 @@ impl<'b> Scanner<'b>
          * P.S: scroll up 10 lines
          */
 
-        let exceeded_max_len = self
-            .stats
-            .read
-            .checked_sub(self.key.mark)
-            .filter(|diff| *diff > 1024)
-            .is_some();
-
-        if exceeded_max_len || self.key.line != self.stats.lines
+        if self.key.allowed()
         {
-            self.key = Key::new(self.stats.read, self.stats.lines)
+            let exceeded_max_len = self
+                .stats
+                .read
+                .checked_sub(self.key.mark)
+                .filter(|diff| *diff > 1024)
+                .is_some();
+
+            if dbg!(exceeded_max_len) || dbg!(self.key.line != self.stats.lines)
+            {
+                if self.key.required()
+                {
+                    return Err(ScanError::MissingValue);
+                }
+
+                self.key.impossible()
+            }
         }
+
+        Ok(())
     }
 }
 
@@ -1143,7 +1164,7 @@ mod tests
     }
 
     #[test]
-    fn implicit_key_simple()
+    fn key_simple_style_single()
     {
         use ScalarStyle::SingleQuote;
 
@@ -1155,6 +1176,29 @@ mod tests
             | Token::Key                                => "expected an implicit key",
             | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
             | Token::Value                              => "expected a value token",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn key_many_style_single()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "'key1': 'value1'\n'key2': 'value2'";
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key1"), SingleQuote)  => "expected a flow scalar (single)",
+            | Token::Value                              => "expected a value token",
+            | Token::Scalar(cow!("value1"), SingleQuote)=> "expected a flow scalar (single)",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key2"), SingleQuote)  => "expected a flow scalar (single)",
+            | Token::Value                              => "expected a value token",
+            | Token::Scalar(cow!("value2"), SingleQuote)=> "expected a flow scalar (single)",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
@@ -1197,6 +1241,54 @@ mod tests
         );
 
         assert_eq!(s.stats, stats_of(data));
+    }
+
+    #[test]
+    fn complex_no_map_sequence()
+    {
+        use ScalarStyle::{DoubleQuote, SingleQuote};
+
+        let data = r##"
+
+%YAML           1.2                     # our document's version.
+%TAG !          primary:namespace       # our doc's primary tag
+%TAG !!         secondary/namespace:    # our doc's secondary tag
+%TAG !named0!   named0:                 # A named tag
+---
+
+!!str "an \
+anchor": &ref !value 'some   
+                                value'
+!!str 'an alias': *ref
+
+...
+
+"##;
+        let mut s = Scanner::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            | Token::VersionDirective(1, 2),
+            | Token::TagDirective(cow!("!"), cow!("primary:namespace")),
+            | Token::TagDirective(cow!("!!"), cow!("secondary/namespace:")),
+            | Token::TagDirective(cow!("!named0!"), cow!("named0:")),
+            | Token::DocumentStart,
+            | Token::Tag(cow!("!!"), cow!("str")),
+            | Token::Key,
+            | Token::Scalar(cow!("an anchor"), DoubleQuote),
+            | Token::Value,
+            | Token::Anchor(cow!("ref")),
+            | Token::Tag(cow!("!"), cow!("value")),
+            | Token::Scalar(cow!("some value"), SingleQuote),
+            | Token::Tag(cow!("!!"), cow!("str")),
+            | Token::Key,
+            | Token::Scalar(cow!("an alias"), SingleQuote),
+            | Token::Value,
+            | Token::Alias(cow!("ref")),
+            | Token::DocumentEnd,
+            | Token::StreamEnd,
+            @ None
+        );
     }
 
     #[test]
