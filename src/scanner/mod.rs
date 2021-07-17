@@ -51,9 +51,10 @@ impl<'b> Scanner<'b>
         {
             match self.key.next_token(self.buffer, scratch)?
             {
-                Some((token, amt)) =>
+                Some((token, stats)) =>
                 {
-                    advance!(self.buffer, :self.stats, amt);
+                    advance!(self.buffer, stats.read);
+                    self.stats += stats;
 
                     Ok(Some(token))
                 },
@@ -387,13 +388,13 @@ impl<'b> Scanner<'b>
         let token = if self.key.allowed() && check_is_key(&buffer[amt..], EXTENDABLE)?
         {
             // reset stats, save the scalar
-            stats = MStats::new();
-            self.key.save(range, amt);
+            self.key.save(range, stats);
 
             // Safety: we just saved a token, so there is >= 1 token
             // remaining
-            let (token, amt) = self.key.next_token(buffer, scratch)?.unwrap();
-            advance!(buffer, :stats, amt);
+            let (token, s) = self.key.next_token(buffer, scratch)?.unwrap();
+            advance!(buffer, s.read);
+            stats = s;
 
             token
         }
