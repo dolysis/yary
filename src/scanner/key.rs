@@ -1,4 +1,4 @@
-use super::scalar::flow::ScalarRange;
+use super::{scalar::flow::ScalarRange, MStats};
 use crate::{
     scanner::error::ScanResult as Result,
     token::{Ref, Token},
@@ -58,9 +58,9 @@ impl Key
     }
 
     /// Save a scalar token, starting a token sequence
-    pub fn save(&mut self, r: ScalarRange, advance: usize)
+    pub fn save(&mut self, r: ScalarRange, stats: MStats)
     {
-        self.state = Some(KeyState::new(r, advance))
+        self.state = Some(KeyState::new(r, stats))
     }
 
     pub fn has_tokens(&self) -> bool
@@ -72,7 +72,7 @@ impl Key
         &mut self,
         base: &'b str,
         scratch: &'c mut Vec<u8>,
-    ) -> Result<Option<(Ref<'b, 'c>, usize)>>
+    ) -> Result<Option<(Ref<'b, 'c>, MStats)>>
     {
         let state = match self.state.take()
         {
@@ -82,13 +82,13 @@ impl Key
 
         match state.next_state(base, scratch)?
         {
-            (state @ Some(_), token, amt) =>
+            (state @ Some(_), token, stats) =>
             {
                 self.state = state;
 
-                Ok(Some((token, amt)))
+                Ok(Some((token, stats)))
             },
-            (None, token, amt) => Ok(Some((token, amt))),
+            (None, token, stats) => Ok(Some((token, stats))),
         }
     }
 }
@@ -133,35 +133,39 @@ impl Default for NextKey
 #[derive(Debug, Clone)]
 pub(in crate::scanner) enum KeyState
 {
-    Start(ScalarRange, usize),
-    KeyYielded(ScalarRange, usize),
+    Start(ScalarRange, MStats),
+    KeyYielded(ScalarRange, MStats),
 }
 
 impl KeyState
 {
-    pub fn new(r: ScalarRange, advance: usize) -> Self
+    pub fn new(r: ScalarRange, stats: MStats) -> Self
     {
-        Self::Start(r, advance)
+        Self::Start(r, stats)
     }
 
     pub fn next_state<'b, 'c>(
         self,
         base: &'b str,
         scratch: &'c mut Vec<u8>,
-    ) -> Result<(Option<Self>, Ref<'b, 'c>, usize)>
+    ) -> Result<(Option<Self>, Ref<'b, 'c>, MStats)>
     {
         match self
         {
-            Self::Start(r, amt) => Ok((Some(Self::KeyYielded(r, amt)), Token::Key.borrowed(), 0)),
-            Self::KeyYielded(r, amt) => Ok((None, r.into_token(base, scratch)?, amt)),
+            Self::Start(r, stats) => Ok((
+                Some(Self::KeyYielded(r, stats)),
+                Token::Key.borrowed(),
+                MStats::new(),
+            )),
+            Self::KeyYielded(r, stats) => Ok((None, r.into_token(base, scratch)?, stats)),
         }
     }
 
-    pub fn into_inner(self) -> (ScalarRange, usize)
+    pub fn into_inner(self) -> (ScalarRange, MStats)
     {
         match self
         {
-            Self::Start(r, amt) | Self::KeyYielded(r, amt) => (r, amt),
+            Self::Start(r, stats) | Self::KeyYielded(r, stats) => (r, stats),
         }
     }
 }
