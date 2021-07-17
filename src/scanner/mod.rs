@@ -68,10 +68,6 @@ impl<'b> Scanner<'b>
 
     fn scan_next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
     {
-        dbg!(self.key.allowed());
-        self.reset_stale_key()?;
-        dbg!(self.key.allowed());
-
         if let Some(begin) = self.start_stream()
         {
             return Ok(begin.borrowed().into());
@@ -385,7 +381,10 @@ impl<'b> Scanner<'b>
         let (range, amt) = scan_flow_scalar(buffer, &mut stats, scratch, single)?;
 
         // If we found a key, save the scalar
-        let token = if dbg!(self.key.allowed()) && check_is_key(&buffer[amt..])
+        // FIXME: we need to allow Scanner callers to indicate
+        // whether the buffer they provide is growable
+        const EXTENDABLE: bool = false;
+        let token = if self.key.allowed() && check_is_key(&buffer[amt..], EXTENDABLE)?
         {
             // reset stats, save the scalar
             stats = MStats::new();
@@ -439,41 +438,6 @@ impl<'b> Scanner<'b>
         self.stats += stats;
 
         Ok(Some(token))
-    }
-
-    fn reset_stale_key(&mut self) -> Result<()>
-    {
-        /*
-         * The YAML spec requires that an implicit key cannot
-         * exceed 1024 characters, and must be contained to
-         * a single line
-         *
-         * https://yaml.org/spec/1.2/spec.html#ns-s-implicit-yaml-key(c)
-         *
-         * P.S: scroll up 10 lines
-         */
-
-        if self.key.allowed()
-        {
-            let exceeded_max_len = self
-                .stats
-                .read
-                .checked_sub(self.key.mark)
-                .filter(|diff| *diff > 1024)
-                .is_some();
-
-            if dbg!(exceeded_max_len) || dbg!(self.key.line != self.stats.lines)
-            {
-                if self.key.required()
-                {
-                    return Err(ScanError::MissingValue);
-                }
-
-                self.key.impossible()
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -634,14 +598,21 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
     base.len() - buffer.len()
 }
 
-fn check_is_key(buffer: &str) -> bool
+fn check_is_key(buffer: &str, extendable: bool) -> Result<bool>
 {
     let amt = eat_whitespace(buffer, &mut MStats::new(), !COMMENTS);
 
-    // FIXME: we need to support io::Read based buffers,
-    // and need some way to hint that the buffer should
-    // contain <N> more bytes, fetching them if required
-    check!(~buffer, amt => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1)
+    // If the buffer has the possibility to be grown, we should
+    // error here, as it is possible we've hit a read
+    // boundary
+    if extendable && buffer[amt..].len() < 2
+    {
+        return Err(ScanError::UnexpectedEOF);
+    }
+
+    let is_key = check!(~buffer, amt => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1);
+
+    Ok(is_key)
 }
 
 /// Vessel for tracking various stats about the underlying
