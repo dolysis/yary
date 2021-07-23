@@ -25,65 +25,79 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct Scanner<'b>
+struct Scanner
 {
-    buffer: &'b str,
-    stats:  MStats,
-    state:  StreamState,
-    key:    Key,
+    stats: MStats,
+    state: StreamState,
+    key:   Key,
 }
 
-impl<'b> Scanner<'b>
+impl Scanner
 {
-    pub fn new(data: &'b str) -> Self
+    pub fn new() -> Self
     {
         Self {
-            buffer: data,
-            stats:  MStats::new(),
-            state:  StreamState::Start,
-            key:    Key::default(),
+            stats: MStats::new(),
+            state: StreamState::Start,
+            key:   Key::default(),
         }
     }
 
-    fn next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    fn next_token<'b, 'c>(
+        &mut self,
+        base: &'b str,
+        scratch: &'c mut Vec<u8>,
+        tokens: &mut Vec<Ref<'b, 'c>>,
+    ) -> Result<()>
     {
-        if self.key.has_tokens()
+        let mut buffer = base;
+        loop
         {
-            match self.key.next_token(self.buffer, scratch)?
+            let fetch_tokens = match tokens.last()
             {
-                Some((token, stats)) =>
-                {
-                    advance!(self.buffer, stats.read);
-                    self.stats += stats;
+                Some(token) if *token == Token::StreamEnd => false,
+                _ => true,
+            };
 
-                    Ok(Some(token))
-                },
-                _ => unreachable!("{}: while parsing a key sequence", BUG),
+            if fetch_tokens
+            {
+                self.scan_next_token(&mut buffer, scratch, tokens)?
+            }
+            else
+            {
+                break;
             }
         }
-        else
-        {
-            self.scan_next_token(scratch)
-        }
+
+        Ok(())
     }
 
-    fn scan_next_token<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    fn scan_next_token<'b, 'c>(
+        &mut self,
+        base: &mut &'b str,
+        scratch: &'c mut Vec<u8>,
+        tokens: &mut Vec<Ref<'b, 'c>>,
+    ) -> Result<()>
     {
-        if let Some(begin) = self.start_stream()
+        if self.state == StreamState::Start
         {
-            return Ok(begin.borrowed().into());
+            self.start_stream(tokens)
         }
 
-        self.eat_whitespace(COMMENTS);
+        self.eat_whitespace(base, COMMENTS);
 
-        if let Some(end) = self.stream_end()
+        if base.is_empty() || self.state == StreamState::Done
         {
-            return Ok(end.borrowed().into());
+            self.stream_end(*base, tokens);
+            return Ok(());
         }
 
-        if let Some(document) = self.document_marker()
+        if self.stats.column == 0
+            && isWhiteSpaceZ!(~base, 3)
+            && check!(~base => [b'-', b'-', b'-', ..] |  [b'.', b'.', b'.', ..])
         {
-            return Ok(document.borrowed().into());
+            self.document_marker(base, tokens);
+            return Ok(());
         }
 
         /*
@@ -99,38 +113,18 @@ impl<'b> Scanner<'b>
          * Hopefully in future this issue will be resolved and I
          * can remove this match in favour of if guards
          */
-        match self.buffer.as_bytes()
+        match base.as_bytes()
         {
-            [DIRECTIVE, ..] => match self.directive(scratch)?
-            {
-                directive @ Some(_) => Ok(directive),
-                None => unreachable!("{}: while scanning a directive", BUG),
-            },
-            [ANCHOR, ..] | [ALIAS, ..] => match self.anchor()?
-            {
-                Some(token) => Ok(Some(token.borrowed())),
-                None => unreachable!("{}: while scanning an anchor", BUG),
-            },
-            [TAG, ..] => match self.tag(scratch)?
-            {
-                tag @ Some(_) => Ok(tag),
-                None => unreachable!("{}: while scanning a tag", BUG),
-            },
-            [SINGLE, ..] | [DOUBLE, ..] => match self.flow_scalar(scratch)?
-            {
-                fscalar @ Some(_) => Ok(fscalar),
-                None => unreachable!("{}: while parsing a flow scalar", BUG),
-            },
-            [VALUE, ..] if isWhiteSpaceZ!(~self.buffer, 1) => match self.value()?
-            {
-                value @ Some(_) => Ok(value),
-                None => unreachable!("{}: while parsing a value", BUG),
-            },
-            _ => Ok(None),
+            [DIRECTIVE, ..] => return self.directive(base, scratch, tokens),
+            [ANCHOR, ..] | [ALIAS, ..] => return self.anchor(base, tokens),
+            [TAG, ..] => return self.tag(base, scratch, tokens),
+            [SINGLE, ..] | [DOUBLE, ..] => return self.flow_scalar(base, scratch, tokens),
+            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) => return self.value(base, tokens),
+            _ => unreachable!(),
         }
     }
 
-    fn start_stream(&mut self) -> Option<Token<'b>>
+    fn start_stream(&mut self, tokens: &mut Vec<Ref<'_, '_>>)
     {
         match self.state
         {
@@ -142,35 +136,42 @@ impl<'b> Scanner<'b>
 
                 self.state = StreamState::Stream;
 
-                Some(Token::StreamStart(StreamEncoding::UTF8))
+                let token = Token::StreamStart(StreamEncoding::UTF8);
+
+                tokens.push(token.borrowed())
             },
-            _ => None,
+            _ =>
+            {},
         }
     }
 
-    fn stream_end(&mut self) -> Option<Token<'b>>
+    fn stream_end(&mut self, buffer: &str, tokens: &mut Vec<Ref<'_, '_>>)
     {
-        match (self.state, self.buffer.is_empty())
+        match (self.state, buffer.is_empty())
         {
-            (StreamState::Done, _) => None,
+            (StreamState::Done, _) =>
+            {},
             (_, true) =>
             {
                 self.state = StreamState::Done;
 
-                Some(Token::StreamEnd)
+                let token = Token::StreamEnd;
+
+                tokens.push(token.borrowed());
             },
-            (_, false) => None,
+            (_, false) =>
+            {},
         }
     }
 
     /// Chomp whitespace and optionally comments until we
     /// reach the next token, updating buffer[0] to the
     /// beginning of the new token
-    fn eat_whitespace(&mut self, comments: bool) -> usize
+    fn eat_whitespace(&mut self, buffer: &mut &str, comments: bool) -> usize
     {
         let mut stats = MStats::new();
 
-        let amt = eat_whitespace(&self.buffer, &mut stats, comments);
+        let amt = eat_whitespace(*buffer, &mut stats, comments);
 
         // A new line may start a key in the block context
         //
@@ -181,43 +182,46 @@ impl<'b> Scanner<'b>
             self.key.possible(!REQUIRED);
         }
 
-        advance!(self.buffer, amt);
+        advance!(*buffer, amt);
         self.stats += stats;
 
         amt
     }
 
-    fn document_marker(&mut self) -> Option<Token<'b>>
+    fn document_marker(&mut self, buffer: &mut &str, tokens: &mut Vec<Ref<'_, '_>>)
     {
-        if self.stats.column == 0 && isWhiteSpaceZ!(~self.buffer, 3)
+        if self.stats.column == 0 && isWhiteSpaceZ!(~buffer, 3)
         {
-            let token = match self.buffer.as_bytes()
+            let token = match buffer.as_bytes()
             {
                 [b'-', b'-', b'-', ..] => Token::DocumentStart,
                 [b'.', b'.', b'.', ..] => Token::DocumentEnd,
-                _ => return None,
+                _ => return,
             };
 
-            advance!(self.buffer, :self.stats, 3);
+            advance!(*buffer, :self.stats, 3);
 
             // A key cannot follow a document marker
             // (though a scalar can)
             self.key.impossible();
 
-            return Some(token);
+            tokens.push(token.borrowed())
         }
-
-        None
     }
 
-    fn directive<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    fn directive<'b, 'c>(
+        &mut self,
+        base: &mut &'b str,
+        scratch: &'c mut Vec<u8>,
+        tokens: &mut Vec<Ref<'b, 'c>>,
+    ) -> Result<()>
     {
-        let mut buffer = self.buffer;
+        let mut buffer = *base;
         let mut stats = MStats::new();
 
         if !check!(~buffer => [DIRECTIVE, ..])
         {
-            return Ok(None);
+            return Ok(());
         }
 
         // Safety: we check above that we have len >= 1 (e.g a '%')
@@ -274,23 +278,30 @@ impl<'b> Scanner<'b>
         // %YAML 1.1 # some comment\n
         //          ^^^^^^^^^^^^^^^^^ buffer
         // ^^^^^^^^^ self.buffer.len - buffer.len
-        advance!(self.buffer, self.buffer.len() - buffer.len());
+        advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        Ok(Some(token))
+        tokens.push(token);
+
+        Ok(())
     }
 
     /// Try eat a tag, returning a Token if one could be
     /// found at the current buffer head, or none if one
     /// couldn't.
-    fn tag<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    fn tag<'b, 'c>(
+        &mut self,
+        base: &mut &'b str,
+        scratch: &'c mut Vec<u8>,
+        tokens: &mut Vec<Ref<'b, 'c>>,
+    ) -> Result<()>
     {
-        let mut buffer = self.buffer;
+        let mut buffer = *base;
         let mut stats = MStats::new();
 
         if !check!(~buffer => [TAG, ..])
         {
-            return Ok(None);
+            return Ok(());
         }
 
         let (token, amt) = scan_node_tag(buffer, &mut stats, scratch)?;
@@ -302,15 +313,17 @@ impl<'b> Scanner<'b>
         // !named_tag!type-suffix "my tagged value"
         //                       ^^^^^^^^^^^^^^^^^^ buffer
         // ^^^^^^^^^^^^^^^^^^^^^^ self.buffer.len - buffer.len
-        advance!(self.buffer, self.buffer.len() - buffer.len());
+        advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        Ok(Some(token))
+        tokens.push(token);
+
+        Ok(())
     }
 
-    fn anchor(&mut self) -> Result<Option<Token<'b>>>
+    fn anchor<'b>(&mut self, base: &mut &'b str, tokens: &mut Vec<Ref<'b, '_>>) -> Result<()>
     {
-        let mut buffer = self.buffer;
+        let mut buffer = *base;
         let mut stats = MStats::new();
 
         // *anchor 'rest of the line'
@@ -321,7 +334,7 @@ impl<'b> Scanner<'b>
             {
                 AnchorKind::new(b).expect("we only bind * or & so this cannot fail")
             },
-            _ => return Ok(None),
+            _ => return Ok(()),
         };
 
         advance!(buffer, :stats, 1);
@@ -362,50 +375,41 @@ impl<'b> Scanner<'b>
         // *anchor 'rest of the line'
         //        ^^^^^^^^^^^^^^^^^^^ buffer.len
         // ^^^^^^^ self.buffer.len - buffer.len
-        advance!(self.buffer, self.buffer.len() - buffer.len());
+        advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        Ok(Some(token))
+        tokens.push(token.borrowed());
+
+        Ok(())
     }
 
-    fn flow_scalar<'c>(&mut self, scratch: &'c mut Vec<u8>) -> Result<Option<Ref<'b, 'c>>>
+    fn flow_scalar<'b, 'c>(
+        &mut self,
+        base: &mut &'b str,
+        scratch: &'c mut Vec<u8>,
+        tokens: &mut Vec<Ref<'b, 'c>>,
+    ) -> Result<()>
     {
-        let mut buffer = self.buffer;
+        let mut buffer = *base;
         let mut stats = MStats::new();
         let single = check!(~buffer => [SINGLE, ..]);
 
         if !check!(~buffer => [SINGLE, ..] | [DOUBLE, ..])
         {
-            return Ok(None);
+            return Ok(());
         }
 
         let (range, amt) = scan_flow_scalar(buffer, &mut stats, scratch, single)?;
+        let token = range.into_token(buffer, scratch)?;
 
         // If we found a key, save the scalar
         // FIXME: we need to allow Scanner callers to indicate
         // whether the buffer they provide is growable
         const EXTENDABLE: bool = false;
-        let token = if self.key.allowed() && check_is_key(&buffer[amt..], EXTENDABLE)?
+        if self.key.allowed() && check_is_key(&buffer[amt..], EXTENDABLE)?
         {
-            // reset stats, save the scalar
-            self.key.save(range, stats);
-
-            // Safety: we just saved a token, so there is >= 1 token
-            // remaining
-            let (token, s) = self.key.next_token(buffer, scratch)?.unwrap();
-            advance!(buffer, s.read);
-            stats = s;
-
-            token
+            tokens.push(Token::Key.borrowed())
         }
-        // otherwise return the scalar
-        else
-        {
-            let token = range.into_token(buffer, scratch)?;
-            advance!(buffer, amt);
-
-            token
-        };
 
         // A key cannot follow a flow scalar, as we're either
         // currently in a key (which should be followed by a
@@ -413,35 +417,40 @@ impl<'b> Scanner<'b>
         // break) before another key is legal
         self.key.impossible();
 
-        advance!(self.buffer, self.buffer.len() - buffer.len());
+        advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        Ok(Some(token))
+        tokens.push(token);
+
+        Ok(())
     }
 
-    fn value(&mut self) -> Result<Option<Ref<'b, 'static>>>
+    fn value<'b>(&mut self, base: &mut &'b str, tokens: &mut Vec<Ref<'b, '_>>) -> Result<()>
     {
-        let mut buffer = self.buffer;
+        let mut buffer = *base;
         let mut stats = MStats::new();
 
         if !(check!(~buffer => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1))
         {
-            return Ok(None);
+            return Ok(());
         }
 
-        let token = Token::Value.borrowed();
+        let token = Token::Value;
         advance!(buffer, :stats, 1);
 
         // A key cannot follow a value
         self.key.impossible();
 
-        advance!(self.buffer, self.buffer.len() - buffer.len());
+        advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        Ok(Some(token))
+        tokens.push(token.borrowed());
+
+        Ok(())
     }
 }
 
+/*
 struct ScanIter<'a, 'b, 'c>
 {
     inner:   &'a mut Scanner<'b>,
@@ -460,6 +469,7 @@ impl<'a, 'b, 'c> ScanIter<'a, 'b, 'c>
         dbg!(self.inner.next_token(self.scratch).transpose())
     }
 }
+*/
 
 enum DirectiveKind
 {
