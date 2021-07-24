@@ -21,15 +21,18 @@ use crate::{
         scalar::flow::scan_flow_scalar,
         tag::{scan_node_tag, scan_tag_directive},
     },
-    token::{Ref, StreamEncoding, Token},
+    token::{StreamEncoding, Token},
 };
+
+type Tokens<'de> = Vec<Token<'de>>;
 
 #[derive(Debug)]
 struct Scanner
 {
-    stats: MStats,
-    state: StreamState,
-    key:   Key,
+    offset: usize,
+    stats:  MStats,
+    state:  StreamState,
+    key:    Key,
 }
 
 impl Scanner
@@ -37,51 +40,38 @@ impl Scanner
     pub fn new() -> Self
     {
         Self {
-            stats: MStats::new(),
-            state: StreamState::Start,
-            key:   Key::default(),
+            offset: 0,
+            stats:  MStats::new(),
+            state:  StreamState::Start,
+            key:    Key::default(),
         }
     }
 
-    fn next_token<'b, 'c>(
-        &mut self,
-        base: &'b str,
-        scratch: &'c mut Vec<u8>,
-        tokens: &mut Vec<Ref<'b, 'c>>,
-    ) -> Result<()>
+    fn scan_tokens<'de>(&mut self, base: &'de str, tokens: &mut Tokens<'de>) -> Result<usize>
     {
-        let mut buffer = base;
-        loop
+        if let Some(mut buffer) = base
+            .get(self.offset..)
+            .filter(|_| self.state != StreamState::Done)
         {
-            let fetch_tokens = match tokens.last()
-            {
-                Some(token) if *token == Token::StreamEnd => false,
-                _ => true,
-            };
+            let existing_tokens = tokens.len();
 
-            if fetch_tokens
-            {
-                self.scan_next_token(&mut buffer, scratch, tokens)?
-            }
-            else
-            {
-                break;
-            }
+            self.scan_next_token(&mut buffer, tokens)?;
+
+            self.offset = base.len() - buffer.len();
+
+            return Ok(tokens.len() - existing_tokens);
         }
 
-        Ok(())
+        Ok(0)
     }
 
-    fn scan_next_token<'b, 'c>(
-        &mut self,
-        base: &mut &'b str,
-        scratch: &'c mut Vec<u8>,
-        tokens: &mut Vec<Ref<'b, 'c>>,
-    ) -> Result<()>
+    fn scan_next_token<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>)
+        -> Result<()>
     {
         if self.state == StreamState::Start
         {
-            self.start_stream(tokens)
+            self.start_stream(tokens);
+            return Ok(());
         }
 
         self.eat_whitespace(base, COMMENTS);
@@ -94,7 +84,7 @@ impl Scanner
 
         if self.stats.column == 0
             && isWhiteSpaceZ!(~base, 3)
-            && check!(~base => [b'-', b'-', b'-', ..] |  [b'.', b'.', b'.', ..])
+            && check!(~base => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
         {
             self.document_marker(base, tokens);
             return Ok(());
@@ -115,16 +105,16 @@ impl Scanner
          */
         match base.as_bytes()
         {
-            [DIRECTIVE, ..] => return self.directive(base, scratch, tokens),
+            [DIRECTIVE, ..] => return self.directive(base, tokens),
             [ANCHOR, ..] | [ALIAS, ..] => return self.anchor(base, tokens),
-            [TAG, ..] => return self.tag(base, scratch, tokens),
-            [SINGLE, ..] | [DOUBLE, ..] => return self.flow_scalar(base, scratch, tokens),
+            [TAG, ..] => return self.tag(base, tokens),
+            [SINGLE, ..] | [DOUBLE, ..] => return self.flow_scalar(base, tokens),
             [VALUE, ..] if isWhiteSpaceZ!(~base, 1) => return self.value(base, tokens),
             _ => unreachable!(),
         }
     }
 
-    fn start_stream(&mut self, tokens: &mut Vec<Ref<'_, '_>>)
+    fn start_stream(&mut self, tokens: &mut Tokens)
     {
         match self.state
         {
@@ -138,14 +128,14 @@ impl Scanner
 
                 let token = Token::StreamStart(StreamEncoding::UTF8);
 
-                tokens.push(token.borrowed())
+                tokens.push(token)
             },
             _ =>
             {},
         }
     }
 
-    fn stream_end(&mut self, buffer: &str, tokens: &mut Vec<Ref<'_, '_>>)
+    fn stream_end(&mut self, buffer: &str, tokens: &mut Tokens)
     {
         match (self.state, buffer.is_empty())
         {
@@ -157,7 +147,7 @@ impl Scanner
 
                 let token = Token::StreamEnd;
 
-                tokens.push(token.borrowed());
+                tokens.push(token);
             },
             (_, false) =>
             {},
@@ -188,7 +178,7 @@ impl Scanner
         amt
     }
 
-    fn document_marker(&mut self, buffer: &mut &str, tokens: &mut Vec<Ref<'_, '_>>)
+    fn document_marker(&mut self, buffer: &mut &str, tokens: &mut Tokens)
     {
         if self.stats.column == 0 && isWhiteSpaceZ!(~buffer, 3)
         {
@@ -205,16 +195,11 @@ impl Scanner
             // (though a scalar can)
             self.key.impossible();
 
-            tokens.push(token.borrowed())
+            tokens.push(token)
         }
     }
 
-    fn directive<'b, 'c>(
-        &mut self,
-        base: &mut &'b str,
-        scratch: &'c mut Vec<u8>,
-        tokens: &mut Vec<Ref<'b, 'c>>,
-    ) -> Result<()>
+    fn directive<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -257,7 +242,7 @@ impl Scanner
                 let (minor, skip) = scan_directive_version(buffer)?;
                 advance!(buffer, :stats, skip);
 
-                Token::VersionDirective(major, minor).borrowed()
+                Token::VersionDirective(major, minor)
             },
             DirectiveKind::Tag =>
             {
@@ -265,7 +250,7 @@ impl Scanner
                 advance!(buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
 
                 // Scan the directive, copying if necessary
-                let (token, amt) = scan_tag_directive(buffer, &mut stats, scratch)?;
+                let (token, amt) = scan_tag_directive(buffer, &mut stats)?;
                 advance!(buffer, amt);
 
                 token
@@ -289,12 +274,7 @@ impl Scanner
     /// Try eat a tag, returning a Token if one could be
     /// found at the current buffer head, or none if one
     /// couldn't.
-    fn tag<'b, 'c>(
-        &mut self,
-        base: &mut &'b str,
-        scratch: &'c mut Vec<u8>,
-        tokens: &mut Vec<Ref<'b, 'c>>,
-    ) -> Result<()>
+    fn tag<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -304,7 +284,7 @@ impl Scanner
             return Ok(());
         }
 
-        let (token, amt) = scan_node_tag(buffer, &mut stats, scratch)?;
+        let (token, amt) = scan_node_tag(buffer, &mut stats)?;
         advance!(buffer, amt);
 
         // A key is possible after a tag
@@ -321,7 +301,7 @@ impl Scanner
         Ok(())
     }
 
-    fn anchor<'b>(&mut self, base: &mut &'b str, tokens: &mut Vec<Ref<'b, '_>>) -> Result<()>
+    fn anchor<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -378,19 +358,15 @@ impl Scanner
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        tokens.push(token.borrowed());
+        tokens.push(token);
 
         Ok(())
     }
 
-    fn flow_scalar<'b, 'c>(
-        &mut self,
-        base: &mut &'b str,
-        scratch: &'c mut Vec<u8>,
-        tokens: &mut Vec<Ref<'b, 'c>>,
-    ) -> Result<()>
+    fn flow_scalar<'de>(&mut self, base: &mut &'de str, tokens: &mut Vec<Token<'de>>)
+        -> Result<()>
     {
-        let mut buffer = *base;
+        let buffer = *base;
         let mut stats = MStats::new();
         let single = check!(~buffer => [SINGLE, ..]);
 
@@ -399,8 +375,8 @@ impl Scanner
             return Ok(());
         }
 
-        let (range, amt) = scan_flow_scalar(buffer, &mut stats, scratch, single)?;
-        let token = range.into_token(buffer, scratch)?;
+        let (range, amt) = scan_flow_scalar(buffer, &mut stats, single)?;
+        let token = range.into_token(buffer)?;
 
         // If we found a key, save the scalar
         // FIXME: we need to allow Scanner callers to indicate
@@ -408,7 +384,7 @@ impl Scanner
         const EXTENDABLE: bool = false;
         if self.key.allowed() && check_is_key(&buffer[amt..], EXTENDABLE)?
         {
-            tokens.push(Token::Key.borrowed())
+            tokens.push(Token::Key)
         }
 
         // A key cannot follow a flow scalar, as we're either
@@ -417,7 +393,7 @@ impl Scanner
         // break) before another key is legal
         self.key.impossible();
 
-        advance!(*base, base.len() - buffer.len());
+        advance!(*base, amt);
         self.stats += stats;
 
         tokens.push(token);
@@ -425,7 +401,7 @@ impl Scanner
         Ok(())
     }
 
-    fn value<'b>(&mut self, base: &mut &'b str, tokens: &mut Vec<Ref<'b, '_>>) -> Result<()>
+    fn value<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -444,32 +420,64 @@ impl Scanner
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        tokens.push(token.borrowed());
+        tokens.push(token);
 
         Ok(())
     }
 }
 
-/*
-struct ScanIter<'a, 'b, 'c>
+struct ScanIter<'de>
 {
-    inner:   &'a mut Scanner<'b>,
-    scratch: &'c mut Vec<u8>,
+    data:   &'de str,
+    scan:   Scanner,
+    tokens: Tokens<'de>,
+
+    done: bool,
 }
 
-impl<'a, 'b, 'c> ScanIter<'a, 'b, 'c>
+impl<'de> ScanIter<'de>
 {
-    pub fn new(inner: &'a mut Scanner<'b>, scratch: &'c mut Vec<u8>) -> Self
+    pub fn new(data: &'de str) -> Self
     {
-        Self { inner, scratch }
+        Self {
+            data,
+            scan: Scanner::new(),
+            tokens: Vec::new(),
+            done: false,
+        }
     }
 
-    pub fn next(&mut self) -> Option<Result<Ref<'_, '_>>>
+    pub fn next_token(&mut self) -> Result<Option<Token<'de>>>
     {
-        dbg!(self.inner.next_token(self.scratch).transpose())
+        if self.done
+        {
+            return Ok(None);
+        }
+
+        if self.tokens.is_empty()
+        {
+            self.scan.scan_tokens(self.data, &mut self.tokens)?;
+        }
+
+        if self.tokens.len() == 0
+        {
+            self.done = true;
+            return Ok(None);
+        }
+
+        Ok(self.tokens.drain(0..1).next())
     }
 }
-*/
+
+impl<'de> Iterator for ScanIter<'de>
+{
+    type Item = Result<Token<'de>>;
+
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        dbg!(self.next_token().transpose())
+    }
+}
 
 enum DirectiveKind
 {
@@ -724,7 +732,7 @@ mod tests
     fn empty()
     {
         let data = "";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -732,14 +740,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn multi_document_empty()
     {
         let data = "---\n---\n---";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8),
@@ -750,14 +758,14 @@ mod tests
             @ None
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn document_markers()
     {
         let data = "\n---\n   \n...";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -767,14 +775,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn chomp_comments()
     {
         let data = "  # a comment\n\n#one two three\n       #four!";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -782,14 +790,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn comment_in_document_markers()
     {
         let data = "---\n# abcdefg \n  # another comment     \n...";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -799,14 +807,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn directive_version()
     {
         let data = "%YAML   1.1 # a comment\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -815,14 +823,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn directive_version_large()
     {
         let data = "%YAML   121.80 # a comment\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -831,28 +839,28 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn directive_version_invalid()
     {
         let data = "%YAML   foo.bar # a comment\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
             > Result::<Token>::Err(ScanError::InvalidVersion)   => "expected an version directive error"
         );
 
-        assert_eq!(s.stats, stats_of(&data[0..0]));
+        assert_eq!(s.scan.stats, stats_of(&data[0..0]));
     }
 
     #[test]
     fn directive_tag_named()
     {
         let data = "%TAG !named! my:cool:tag # a comment\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
@@ -861,14 +869,14 @@ mod tests
             @ None                                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn directive_tag_primary()
     {
         let data = "%TAG ! my:cool:tag\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)              => "expected start of stream",
@@ -877,14 +885,14 @@ mod tests
             @ None                                                  => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn directive_tag_secondary()
     {
         let data = "%TAG !! @my/crazy&tag:  \n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
@@ -893,28 +901,28 @@ mod tests
             @ None                                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn directive_tag_ending_ws()
     {
         let data = "%TAG !! @my/crazy&tag:";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
             > Result::<Token>::Err(ScanError::UnexpectedEOF)    => "expected an eof error"
         );
 
-        assert_eq!(s.stats, stats_of(&data[0..0]));
+        assert_eq!(s.scan.stats, stats_of(&data[0..0]));
     }
 
     #[test]
     fn directive_tag_percent_encoding()
     {
         let data = "%TAG !! :My:%C6%86razy:T%c8%82g:\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
@@ -923,14 +931,14 @@ mod tests
             @ None                                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn anchor_alias()
     {
         let data = "*alias\n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -939,14 +947,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn anchor()
     {
         let data = "    &anchor     \n";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -955,14 +963,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn tag_primary()
     {
         let data = "!a ";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -971,14 +979,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn tag_secondary()
     {
         let data = "!!str ";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -987,14 +995,14 @@ mod tests
             @ None                                      => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn tag_named()
     {
         let data = "    !named!tag-suffix ";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
@@ -1003,14 +1011,14 @@ mod tests
             @ None                                              => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn tag_escaped()
     {
         let data = "!n!my:%3D%3descaped: ";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
@@ -1019,14 +1027,14 @@ mod tests
             @ None                                              => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
     fn tag_non_resolving()
     {
         let data = "! ";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
@@ -1035,7 +1043,7 @@ mod tests
             @ None                                              => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, (2, 0, 2));
+        assert_eq!(s.scan.stats, (2, 0, 2));
     }
 
     #[test]
@@ -1044,7 +1052,7 @@ mod tests
         use ScalarStyle::SingleQuote;
 
         let data = "'hello world, single quoted flow scalar'";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                                      => "expected start of stream",
@@ -1053,7 +1061,7 @@ mod tests
             @ None                                                                          => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
@@ -1066,7 +1074,7 @@ mod tests
             
             line3
             line4'";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
@@ -1075,7 +1083,7 @@ mod tests
             @ None                                                          => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
@@ -1084,7 +1092,7 @@ mod tests
         use ScalarStyle::DoubleQuote;
 
         let data = r#""line0 line1\nline3\tline4""#;
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
@@ -1093,7 +1101,7 @@ mod tests
             @ None                                                          => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
@@ -1107,7 +1115,7 @@ mod tests
             
             line3
             line4""#;
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
@@ -1116,7 +1124,7 @@ mod tests
             @ None                                                          => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
@@ -1132,7 +1140,7 @@ mod tests
             
             line3
         line4""#;
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)                      => "expected start of stream",
@@ -1142,7 +1150,7 @@ mod tests
             @ None                                                          => "expected stream to be finished"
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
@@ -1151,7 +1159,7 @@ mod tests
         use ScalarStyle::SingleQuote;
 
         let data = "'key': ";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -1169,7 +1177,7 @@ mod tests
         use ScalarStyle::SingleQuote;
 
         let data = "'key1': 'value1'\n'key2': 'value2'";
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
@@ -1206,7 +1214,7 @@ mod tests
 ...
 
 "##;
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8),
@@ -1222,7 +1230,7 @@ mod tests
             @ None
         );
 
-        assert_eq!(s.stats, stats_of(data));
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
@@ -1246,7 +1254,7 @@ anchor": &ref !value 'some
 ...
 
 "##;
-        let mut s = Scanner::new(data);
+        let mut s = ScanIter::new(data);
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8),
@@ -1277,11 +1285,12 @@ anchor": &ref !value 'some
     fn eat_whitespace()
     {
         let data = "   abc";
-        let mut s = Scanner::new(data);
+        let mut buffer = data;
+        let mut s = Scanner::new();
 
-        s.eat_whitespace(false);
+        s.eat_whitespace(&mut buffer, false);
 
-        assert_eq!(s.buffer, "abc");
+        assert_eq!(buffer, "abc");
         assert_eq!(s.stats, (3, 0, 3))
     }
 
@@ -1289,11 +1298,12 @@ anchor": &ref !value 'some
     fn eat_whitespace_none()
     {
         let data = "abc";
-        let mut s = Scanner::new(data);
+        let mut buffer = data;
+        let mut s = Scanner::new();
 
-        s.eat_whitespace(false);
+        s.eat_whitespace(&mut buffer, false);
 
-        assert_eq!(s.buffer, "abc");
+        assert_eq!(buffer, "abc");
         assert_eq!(s.stats, (0, 0, 0))
     }
 
