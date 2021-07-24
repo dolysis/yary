@@ -1,8 +1,5 @@
 use super::{scalar::flow::ScalarRange, MStats};
-use crate::{
-    scanner::error::ScanResult as Result,
-    token::{Ref, Token},
-};
+use crate::{scanner::error::ScanResult as Result, token::Token};
 
 #[derive(Debug, Clone)]
 pub(in crate::scanner) struct Key
@@ -68,11 +65,7 @@ impl Key
         self.state.is_some()
     }
 
-    pub fn next_token<'b, 'c>(
-        &mut self,
-        base: &'b str,
-        scratch: &'c mut Vec<u8>,
-    ) -> Result<Option<(Ref<'b, 'c>, MStats)>>
+    pub fn next_token<'de>(&mut self, base: &'de str) -> Result<Option<(Token<'de>, MStats)>>
     {
         let state = match self.state.take()
         {
@@ -80,7 +73,7 @@ impl Key
             None => return Ok(None),
         };
 
-        match state.next_state(base, scratch)?
+        match state.next_state(base)?
         {
             (state @ Some(_), token, stats) =>
             {
@@ -144,20 +137,15 @@ impl KeyState
         Self::Start(r, stats)
     }
 
-    pub fn next_state<'b, 'c>(
-        self,
-        base: &'b str,
-        scratch: &'c mut Vec<u8>,
-    ) -> Result<(Option<Self>, Ref<'b, 'c>, MStats)>
+    pub fn next_state<'de>(self, base: &'de str) -> Result<(Option<Self>, Token<'de>, MStats)>
     {
         match self
         {
-            Self::Start(r, stats) => Ok((
-                Some(Self::KeyYielded(r, stats)),
-                Token::Key.borrowed(),
-                MStats::new(),
-            )),
-            Self::KeyYielded(r, stats) => Ok((None, r.into_token(base, scratch)?, stats)),
+            Self::Start(r, stats) =>
+            {
+                Ok((Some(Self::KeyYielded(r, stats)), Token::Key, MStats::new()))
+            },
+            Self::KeyYielded(r, stats) => Ok((None, r.into_token(base)?, stats)),
         }
     }
 
