@@ -62,8 +62,6 @@
 //! same character ('!') to mean three different things
 //! depending on the context. What a massive headache.
 
-use std::ops::Range;
-
 use crate::{
     scanner::{
         eat_whitespace,
@@ -71,7 +69,7 @@ use crate::{
         scalar::escape::tag_uri_unescape,
         MStats,
     },
-    token::{Ref, Token},
+    token::{Slice, Token},
 };
 
 /// Scan a tag directive from .base returning a tag
@@ -83,8 +81,7 @@ use crate::{
 pub(in crate::scanner) fn scan_tag_directive<'b, 'c>(
     base: &'b str,
     stats: &mut MStats,
-    scratch: &'c mut Vec<u8>,
-) -> Result<(Ref<'b, 'c>, usize)>
+) -> Result<(Token<'b>, usize)>
 {
     let mut buffer = base;
     let mut can_borrow = true;
@@ -109,7 +106,7 @@ pub(in crate::scanner) fn scan_tag_directive<'b, 'c>(
 
     // %TAG !named! :tag:prefix # a comment\n
     //              ^^^^^^^^^^^
-    let (prefix, amt) = scan_tag_uri(buffer, stats, scratch, &mut can_borrow, false)?;
+    let (prefix, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, false)?;
 
     // %TAG !named! tag-prefix # a comment\n
     //                        ^
@@ -120,20 +117,14 @@ pub(in crate::scanner) fn scan_tag_directive<'b, 'c>(
     // .buffer
     let token = if can_borrow
     {
-        Token::TagDirective(cow!(handle), cow!(&buffer[prefix])).borrowed()
+        Token::TagDirective(cow!(handle), prefix)
     }
     // Otherwise, we'll need to copy both the handle and prefix, to unify our
     // lifetimes. Note that this isn't strictly necessary, but requiring Token to
     // contain two unrelated lifetimes is just asking for pain and suffering.
     else
     {
-        let start = scratch.len();
-        scratch.extend_from_slice(handle.as_bytes());
-
-        let handle = std::str::from_utf8(&scratch[start..]).unwrap();
-        let prefix = std::str::from_utf8(&scratch[prefix]).unwrap();
-
-        Token::TagDirective(cow!(handle), cow!(prefix)).copied()
+        Token::TagDirective(cow!(handle), prefix).into_owned()
     };
 
     advance!(buffer, amt);
@@ -157,8 +148,7 @@ pub(in crate::scanner) fn scan_tag_directive<'b, 'c>(
 pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
     base: &'b str,
     stats: &mut MStats,
-    scratch: &'c mut Vec<u8>,
-) -> Result<(Ref<'b, 'c>, usize)>
+) -> Result<(Token<'b>, usize)>
 {
     let mut buffer = base;
     let mut can_borrow = true;
@@ -182,13 +172,13 @@ pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
 
         // !<global:verbatim:tag:> "node"
         //   ^^^^^^^^^^^^^^^^^^^^
-        let (verbatim, amt) = scan_tag_uri(buffer, stats, scratch, &mut can_borrow, true)?;
+        let (verbatim, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, true)?;
 
         // !<global:verbatim:tag:> "node"
         //                       ^
         check!(~buffer, amt + 1 => b'>', else ScanError::InvalidTagSuffix)?;
 
-        let token = assemble_tag(buffer, scratch, &buffer[0..0], verbatim, can_borrow);
+        let token = assemble_tag(&buffer[0..0], verbatim, can_borrow);
 
         (token, amt + 1)
     }
@@ -200,10 +190,7 @@ pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
             // ! "node"
             // ^
             // Single ! without a suffix disables tag resolution
-            Some((TagHandle::Primary(h), amt)) =>
-            {
-                (Token::Tag(cow!(h), cow!(&buffer[0..0])).borrowed(), amt)
-            },
+            Some((TagHandle::Primary(h), amt)) => (Token::Tag(cow!(h), cow!(&buffer[0..0])), amt),
             // !!global "node" OR !named!global "node"
             // ^^                 ^^^^^^^
             // Got a secondary or named tag, scan the suffix now
@@ -213,9 +200,9 @@ pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
 
                 // !!global "node" OR !named!global "node"
                 //   ^^^^^^                  ^^^^^^
-                let (suffix, amt) = scan_tag_uri(buffer, stats, scratch, &mut can_borrow, false)?;
+                let (suffix, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, false)?;
 
-                let token = assemble_tag(buffer, scratch, h, suffix, can_borrow);
+                let token = assemble_tag(h, suffix, can_borrow);
 
                 (token, amt)
             },
@@ -230,9 +217,9 @@ pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
 
                 // !local "node"
                 //  ^^^^^
-                let (suffix, amt) = scan_tag_uri(buffer, stats, scratch, &mut can_borrow, false)?;
+                let (suffix, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, false)?;
 
-                let token = assemble_tag(buffer, scratch, handle, suffix, can_borrow);
+                let token = assemble_tag(handle, suffix, can_borrow);
 
                 (token, amt)
             },
@@ -252,16 +239,15 @@ pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
 /// into .base or .scratch.
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#ns-global-tag-prefix
-pub(in crate::scanner) fn scan_tag_uri(
-    base: &str,
+pub(in crate::scanner) fn scan_tag_uri<'de>(
+    base: &'de str,
     stats: &mut MStats,
-    scratch: &mut Vec<u8>,
     can_borrow: &mut bool,
     verbatim: bool,
-) -> Result<(Range<usize>, usize)>
+) -> Result<(Slice<'de>, usize)>
 {
     let mut buffer = base;
-    let start = scratch.len();
+    let mut scratch = Vec::new();
 
     loop
     {
@@ -307,7 +293,7 @@ pub(in crate::scanner) fn scan_tag_uri(
 
                     *can_borrow = false;
                 }
-                let amt = tag_uri_unescape(buffer, scratch, true)?;
+                let amt = tag_uri_unescape(buffer, &mut scratch, true)?;
                 advance!(buffer, :stats, amt);
             },
             // EOF before loop end is an error
@@ -321,11 +307,13 @@ pub(in crate::scanner) fn scan_tag_uri(
 
     if *can_borrow
     {
-        Ok((0..advance, advance))
+        Ok((cow!(&base[0..advance]), advance))
     }
     else
     {
-        Ok((start..scratch.len(), advance))
+        let utf8 = String::from_utf8(scratch).unwrap();
+
+        Ok((cow!(utf8), advance))
     }
 }
 
@@ -421,26 +409,14 @@ where
 
 /// Helper function for constructing
 /// [Ref][Ref]<[Token::Tag][Token]>s
-fn assemble_tag<'b, 'c>(
-    buffer: &'b str,
-    scratch: &'c mut Vec<u8>,
-    handle: &'b str,
-    suffix: Range<usize>,
-    can_borrow: bool,
-) -> Ref<'b, 'c>
+fn assemble_tag<'de>(handle: &'de str, suffix: Slice<'de>, can_borrow: bool) -> Token<'de>
 {
     if can_borrow
     {
-        Token::Tag(cow!(handle), cow!(&buffer[suffix])).borrowed()
+        Token::Tag(cow!(handle), suffix)
     }
     else
     {
-        let start = scratch.len();
-        scratch.extend_from_slice(handle.as_bytes());
-
-        let h = std::str::from_utf8(&scratch[start..]).unwrap();
-        let t = std::str::from_utf8(&scratch[suffix]).unwrap();
-
-        Token::Tag(cow!(h), cow!(t)).copied()
+        Token::Tag(cow!(handle), suffix).into_owned()
     }
 }
