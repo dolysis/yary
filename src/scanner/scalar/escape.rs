@@ -421,7 +421,7 @@ mod tests
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
             assert_eq!(
-                &*scratch, e,
+                scratch, e,
                 "on iteration {}, expected byte sequence {:?}, got {:?}",
                 i, e, &*scratch
             );
