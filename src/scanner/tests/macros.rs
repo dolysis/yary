@@ -7,18 +7,15 @@
 /// failure
 macro_rules! tokens {
     ($scanner:expr => $($id:tt $expected:expr $(=> $msg:tt)?),+ ) => {
-        fn __tokens<'b: 'a, 'a>(s: &'a mut crate::scanner::Scanner<'b>) {
-            let mut scratch = Vec::new();
-            let iter = crate::scanner::ScanIter::new(s, &mut scratch);
-
-            let f = move |mut i: crate::scanner::ScanIter| -> std::result::Result<(), ::anyhow::Error> {
+        fn __tokens<'de>(s: &mut crate::scanner::ScanIter<'de>) {
+            let f = move |i: &mut crate::scanner::ScanIter| -> std::result::Result<(), ::anyhow::Error> {
 
                 $( tokens!(@unwrap $id i => $expected $(=> $msg)? ); )+
 
                 Ok(())
             };
 
-            if let Err(e) = f(iter) {
+            if let Err(e) = f(s) {
                 panic!("tokens! error: {}", e)
             }
         }
@@ -39,10 +36,9 @@ macro_rules! tokens {
     (@unwrap > $scanner:expr => $expected:expr $(=> $msg:tt)? ) => {
         let event = match $scanner
             .next()
-            .map(|res| res.map(|r| r.into_inner()))
         {
                 Some(r) => r,
-                None => anyhow::bail!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.inner.buffer),
+                None => anyhow::bail!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.data),
 
         };
         assert_eq!(event, $expected $(, $msg)? )
@@ -58,9 +54,9 @@ macro_rules! tokens {
             Some(r) => match r
             {
                 Ok(r) => r,
-                Err(e) => anyhow::bail!("{} ~{}", e, $scanner.inner.buffer),
+                Err(e) => anyhow::bail!("{} ~{}", e, $scanner.data),
             }
-            None => anyhow::bail!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.inner.buffer)
+            None => anyhow::bail!("Unexpected end of tokens, was expecting: {:?} ~{}", $expected, $scanner.data)
         };
 
         assert_eq!(event, $expected)
@@ -72,9 +68,9 @@ macro_rules! tokens {
             Some(r) => match r
             {
                 Ok(r) => r,
-                Err(e) => anyhow::bail!("{} ~{}", e, $scanner.inner.buffer),
+                Err(e) => anyhow::bail!("{} ~{}", e, $scanner.data),
             },
-            None => anyhow::bail!("Unexpected end of tokens, {}: {:?} ~{}", $msg, $expected, $scanner.inner.buffer)
+            None => anyhow::bail!("Unexpected end of tokens, {}: {:?} ~{}", $msg, $expected, $scanner.data)
         };
 
         assert_eq!(event, $expected, $msg)
