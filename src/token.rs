@@ -87,71 +87,110 @@ impl<'a> Token<'a>
             },
         }
     }
-
-    pub fn borrowed<'c>(self) -> Ref<'a, 'c>
-    {
-        Ref::Borrow(self)
-    }
-
-    pub fn copied<'b>(self) -> Ref<'b, 'a>
-    {
-        Ref::Copy(self)
-    }
 }
 
-/// This allows us to discriminate between a Token with
-/// different lifetimes, specifically either a lifetime
-/// 'borrow-ed from the underlying data or 'copy-ied from
-/// some scratch space provided.
-#[derive(Debug, PartialEq)]
-pub enum Ref<'borrow, 'copy>
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Marker
 {
-    Borrow(Token<'borrow>),
-    Copy(Token<'copy>),
+    /// The stream's start, with the byte (encoding)
+    /// [virtual]
+    StreamStart,
+    /// The stream's end [virtual]
+    StreamEnd,
+    /// The %YAML directive, (major,minor)
+    VersionDirective,
+    /// The %TAG directive
+    TagDirective,
+    /// A ---
+    DocumentStart,
+    /// A ...
+    DocumentEnd,
+    /// Indentation increase for a block (sequence)
+    BlockSequenceStart,
+    /// Indentation increase for a block (map)
+    BlockMappingStart,
+    /// Indentation decrease for a block
+    BlockEnd,
+    /// A '['
+    FlowSequenceStart,
+    /// A ']'
+    FlowSequenceEnd,
+    /// A '{'
+    FlowMappingStart,
+    /// A '}'
+    FlowMappingEnd,
+    /// A '-'
+    BlockEntry,
+    /// A ','
+    FlowEntry,
+    /// Either a '?' or nothing
+    Key,
+    /// A ':'
+    Value,
+    /// An alias (*anchor)
+    Alias,
+    /// An anchor (&anchor)
+    Anchor,
+    /// A tag (!handle, !suffix)
+    Tag,
+    /// A scalar (value, style)
+    Scalar,
 }
 
-impl<'b, 'c> Ref<'b, 'c>
+impl Marker
 {
-    /// Unifies the lifetimes of the underlying Token,
-    /// returning one that lives at least as long as
-    /// 'borrow. Note that this _will_ allocate if a copy
-    /// needs to be made.
-    pub fn into_inner(self) -> Token<'b>
+    fn from_token(t: &Token<'_>) -> Self
     {
-        match self
+        use Token::*;
+
+        match t
         {
-            Self::Borrow(t) => t,
-            Self::Copy(t) => t.into_owned(),
+            StreamStart(_) => Self::StreamStart,
+            StreamEnd => Self::StreamEnd,
+            VersionDirective(_, _) => Self::VersionDirective,
+            TagDirective(_, _) => Self::TagDirective,
+            DocumentStart => Self::DocumentStart,
+            DocumentEnd => Self::DocumentEnd,
+            BlockSequenceStart => Self::BlockSequenceStart,
+            BlockMappingStart => Self::BlockMappingStart,
+            BlockEnd => Self::BlockEnd,
+            FlowSequenceStart => Self::FlowSequenceStart,
+            FlowSequenceEnd => Self::FlowSequenceEnd,
+            FlowMappingStart => Self::FlowMappingStart,
+            FlowMappingEnd => Self::FlowMappingEnd,
+            BlockEntry => Self::BlockEntry,
+            FlowEntry => Self::FlowEntry,
+            Key => Self::Key,
+            Value => Self::Value,
+            Alias(_) => Self::Alias,
+            Anchor(_) => Self::Anchor,
+            Tag(_, _) => Self::Tag,
+            Scalar(_, _) => Self::Scalar,
         }
     }
+}
 
-    /// Short hand check if the Ref contains a borrowed
-    /// Token
-    pub fn is_borrowed(&self) -> bool
+impl Default for Marker
+{
+    fn default() -> Self
     {
-        match self
-        {
-            Self::Borrow(_) => true,
-            Self::Copy(_) => false,
-        }
-    }
-
-    /// Short hand check if the Ref contains a copied Token
-    pub fn is_copied(&self) -> bool
-    {
-        !self.is_borrowed()
+        Self::StreamStart
     }
 }
 
-impl<'b, 'c> PartialEq<Token<'_>> for Ref<'b, 'c>
+impl From<&'_ Token<'_>> for Marker
+{
+    fn from(t: &'_ Token<'_>) -> Self
+    {
+        Self::from_token(t)
+    }
+}
+
+impl PartialEq<Token<'_>> for Marker
 {
     fn eq(&self, other: &Token<'_>) -> bool
     {
-        match self
-        {
-            Self::Borrow(t) => t.eq(other),
-            Self::Copy(t) => t.eq(other),
-        }
+        *self == Self::from(other)
     }
 }
 
