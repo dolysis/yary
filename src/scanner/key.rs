@@ -1,36 +1,24 @@
-use super::{scalar::flow::ScalarRange, MStats};
-use crate::{scanner::error::ScanResult as Result, token::Token};
-
 #[derive(Debug, Clone)]
 pub(in crate::scanner) struct Key
 {
-    next:  Option<NextKey>,
-    state: Option<KeyState>,
-
-    pub mark: usize,
-    pub line: usize,
+    possible: Option<KeyPossible>,
 }
 
 impl Key
 {
-    pub fn new(mark: usize, line: usize) -> Self
+    pub fn new() -> Self
     {
-        Self {
-            mark,
-            line,
-            state: None,
-            next: None,
-        }
+        Self { possible: None }
     }
 
     /// A key is possible / .required at the current stream
     /// position
     pub fn possible(&mut self, required: bool)
     {
-        self.next = match required
+        self.possible = match required
         {
-            true => NextKey::Required,
-            false => NextKey::Possible,
+            true => KeyPossible::Required,
+            false => KeyPossible::Yes,
         }
         .into();
     }
@@ -39,50 +27,22 @@ impl Key
     /// position
     pub fn impossible(&mut self)
     {
-        self.next = Some(NextKey::Disallowed)
+        self.possible = Some(KeyPossible::No)
     }
 
     /// Is a key allowed at the current position?
     pub fn allowed(&self) -> bool
     {
-        self.next.as_ref().map(|s| s.allowed()).unwrap_or(false)
+        self.possible.as_ref().map(|s| s.allowed()).unwrap_or(false)
     }
 
     /// Is a key required at the current position?
     pub fn required(&self) -> bool
     {
-        self.next.as_ref().map(|s| s.required()).unwrap_or(false)
-    }
-
-    /// Save a scalar token, starting a token sequence
-    pub fn save(&mut self, r: ScalarRange, stats: MStats)
-    {
-        self.state = Some(KeyState::new(r, stats))
-    }
-
-    pub fn has_tokens(&self) -> bool
-    {
-        self.state.is_some()
-    }
-
-    pub fn next_token<'de>(&mut self, base: &'de str) -> Result<Option<(Token<'de>, MStats)>>
-    {
-        let state = match self.state.take()
-        {
-            Some(state) => state,
-            None => return Ok(None),
-        };
-
-        match state.next_state(base)?
-        {
-            (state @ Some(_), token, stats) =>
-            {
-                self.state = state;
-
-                Ok(Some((token, stats)))
-            },
-            (None, token, stats) => Ok(Some((token, stats))),
-        }
+        self.possible
+            .as_ref()
+            .map(|s| s.required())
+            .unwrap_or(false)
     }
 }
 
@@ -90,23 +50,23 @@ impl Default for Key
 {
     fn default() -> Self
     {
-        Self::new(0, 1)
+        Self::new()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(in crate::scanner) enum NextKey
+pub(in crate::scanner) enum KeyPossible
 {
-    Disallowed,
-    Possible,
+    No,
+    Yes,
     Required,
 }
 
-impl NextKey
+impl KeyPossible
 {
     fn allowed(&self) -> bool
     {
-        matches!(self, Self::Possible | Self::Required)
+        matches!(self, Self::Yes | Self::Required)
     }
 
     fn required(&self) -> bool
@@ -115,45 +75,10 @@ impl NextKey
     }
 }
 
-impl Default for NextKey
+impl Default for KeyPossible
 {
     fn default() -> Self
     {
-        Self::Disallowed
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(in crate::scanner) enum KeyState
-{
-    Start(ScalarRange, MStats),
-    KeyYielded(ScalarRange, MStats),
-}
-
-impl KeyState
-{
-    pub fn new(r: ScalarRange, stats: MStats) -> Self
-    {
-        Self::Start(r, stats)
-    }
-
-    pub fn next_state<'de>(self, base: &'de str) -> Result<(Option<Self>, Token<'de>, MStats)>
-    {
-        match self
-        {
-            Self::Start(r, stats) =>
-            {
-                Ok((Some(Self::KeyYielded(r, stats)), Token::Key, MStats::new()))
-            },
-            Self::KeyYielded(r, stats) => Ok((None, r.into_token(base)?, stats)),
-        }
-    }
-
-    pub fn into_inner(self) -> (ScalarRange, MStats)
-    {
-        match self
-        {
-            Self::Start(r, stats) | Self::KeyYielded(r, stats) => (r, stats),
-        }
+        Self::No
     }
 }
