@@ -189,7 +189,7 @@ impl Scanner
 
             // A key cannot follow a document marker
             // (though a scalar can)
-            self.key.impossible();
+            self.key_forbidden();
 
             tokens.push(token)
         }
@@ -254,7 +254,7 @@ impl Scanner
         };
 
         // A key cannot follow a directive (a newline is required)
-        self.key.impossible();
+        self.key_forbidden();
 
         // %YAML 1.1 # some comment\n
         //          ^^^^^^^^^^^^^^^^^ buffer
@@ -388,7 +388,7 @@ impl Scanner
         // currently in a key (which should be followed by a
         // value), or a value which needs a separator (e.g line
         // break) before another key is legal
-        self.key.impossible();
+        self.key_forbidden();
 
         advance!(*base, amt);
         self.stats += stats;
@@ -412,7 +412,7 @@ impl Scanner
         advance!(buffer, :stats, 1);
 
         // A key cannot follow a value
-        self.key.impossible();
+        self.key_forbidden();
 
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
@@ -420,6 +420,11 @@ impl Scanner
         tokens.push(token);
 
         Ok(())
+    }
+
+    fn key_forbidden(&mut self)
+    {
+        self.key.forbidden()
     }
 }
 
