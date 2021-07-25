@@ -378,7 +378,8 @@ impl Scanner
         // FIXME: we need to allow Scanner callers to indicate
         // whether the buffer they provide is growable
         const EXTENDABLE: bool = false;
-        if self.key.allowed() && check_is_key(&buffer[amt..], EXTENDABLE)?
+        if self.key.allowed()
+            && check_is_key(&buffer[amt..], &stats, self.key.required(), EXTENDABLE)?
         {
             tokens.push(Token::Key)
         }
@@ -614,9 +615,30 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
     base.len() - buffer.len()
 }
 
-fn check_is_key(buffer: &str, extendable: bool) -> Result<bool>
+fn check_is_key(buffer: &str, key_stats: &MStats, required: bool, extendable: bool)
+    -> Result<bool>
 {
-    let amt = eat_whitespace(buffer, &mut MStats::new(), !COMMENTS);
+    let mut stats = key_stats.clone();
+    let amt = eat_whitespace(buffer, &mut stats, !COMMENTS);
+
+    /*
+     * The YAML spec requires that implicit keys are
+     *
+     * 1. Limited to a single line
+     * 2. Must be less than 1024 characters, including
+     *    trailing whitespace to a ': '
+     *
+     * https://yaml.org/spec/1.2/spec.html#ns-s-implicit-yaml-key(c)
+     */
+    if stats.lines > 0 || stats.read > 1024
+    {
+        if required
+        {
+            return Err(ScanError::MissingValue);
+        }
+
+        return Ok(false);
+    }
 
     // If the buffer has the possibility to be grown, we should
     // error here, as it is possible we've hit a read
@@ -1243,8 +1265,7 @@ mod tests
 %TAG !named0!   named0:                 # A named tag
 ---
 
-!!str "an \
-anchor": &ref !value 'some   
+!!str "an anchor": &ref !value 'some   
                                 value'
 !!str 'an alias': *ref
 
