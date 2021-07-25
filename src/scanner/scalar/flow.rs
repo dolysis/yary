@@ -244,7 +244,7 @@ enum ScalarRangeInner
 
 impl ScalarRange
 {
-    pub fn into_token<'de>(self, base: &'de str) -> Result<Token<'de>>
+    pub fn into_token(self, base: &str) -> Result<Token<'_>>
     {
         use ScalarRangeInner::*;
 

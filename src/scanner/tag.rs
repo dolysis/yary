@@ -78,10 +78,10 @@ use crate::{
 /// This function will attempt to borrow from .base where
 /// possible, but may also copy the directive's handle and
 /// prefix into .scratch if borrowing is not possible.
-pub(in crate::scanner) fn scan_tag_directive<'b, 'c>(
-    base: &'b str,
+pub(in crate::scanner) fn scan_tag_directive<'de>(
+    base: &'de str,
     stats: &mut MStats,
-) -> Result<(Token<'b>, usize)>
+) -> Result<(Token<'de>, usize)>
 {
     let mut buffer = base;
     let mut can_borrow = true;
@@ -145,10 +145,10 @@ pub(in crate::scanner) fn scan_tag_directive<'b, 'c>(
 /// ("", suffix) => A verbatim tag
 /// ("!", "") => A non resolving tag
 /// (handle, suffix) => A primary, secondary or named tag
-pub(in crate::scanner) fn scan_node_tag<'b, 'c>(
-    base: &'b str,
+pub(in crate::scanner) fn scan_node_tag<'de>(
+    base: &'de str,
     stats: &mut MStats,
-) -> Result<(Token<'b>, usize)>
+) -> Result<(Token<'de>, usize)>
 {
     let mut buffer = base;
     let mut can_borrow = true;

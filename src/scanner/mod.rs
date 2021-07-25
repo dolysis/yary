@@ -47,7 +47,9 @@ impl Scanner
         }
     }
 
-    fn scan_tokens<'de>(&mut self, base: &'de str, tokens: &mut Tokens<'de>) -> Result<usize>
+    /// Scan some tokens from the given .base into .tokens
+    /// returning the number added.
+    pub fn scan_tokens<'de>(&mut self, base: &'de str, tokens: &mut Tokens<'de>) -> Result<usize>
     {
         if let Some(mut buffer) = base
             .get(self.offset..)
@@ -105,32 +107,27 @@ impl Scanner
          */
         match base.as_bytes()
         {
-            [DIRECTIVE, ..] => return self.directive(base, tokens),
-            [ANCHOR, ..] | [ALIAS, ..] => return self.anchor(base, tokens),
-            [TAG, ..] => return self.tag(base, tokens),
-            [SINGLE, ..] | [DOUBLE, ..] => return self.flow_scalar(base, tokens),
-            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) => return self.value(base, tokens),
+            [DIRECTIVE, ..] => self.directive(base, tokens),
+            [ANCHOR, ..] | [ALIAS, ..] => self.anchor(base, tokens),
+            [TAG, ..] => self.tag(base, tokens),
+            [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
+            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) => self.value(base, tokens),
             _ => unreachable!(),
         }
     }
 
     fn start_stream(&mut self, tokens: &mut Tokens)
     {
-        match self.state
+        if self.state == StreamState::Start
         {
-            StreamState::Start =>
-            {
-                // A key is allowed at the beginning of the stream
-                self.key.possible(!REQUIRED);
+            // A key is allowed at the beginning of the stream
+            self.key.possible(!REQUIRED);
 
-                self.state = StreamState::Stream;
+            self.state = StreamState::Stream;
 
-                let token = Token::StreamStart(StreamEncoding::UTF8);
+            let token = Token::StreamStart(StreamEncoding::UTF8);
 
-                tokens.push(token)
-            },
-            _ =>
-            {},
+            tokens.push(token)
         }
     }
 
@@ -448,23 +445,22 @@ impl<'de> ScanIter<'de>
 
     pub fn next_token(&mut self) -> Result<Option<Token<'de>>>
     {
-        if self.done
+        if (!self.done) && self.tokens.is_empty()
         {
-            return Ok(None);
+            if let 0 = self.scan.scan_tokens(self.data, &mut self.tokens)?
+            {
+                self.done = true
+            }
         }
 
-        if self.tokens.is_empty()
+        if !self.done
         {
-            self.scan.scan_tokens(self.data, &mut self.tokens)?;
+            Ok(self.tokens.drain(0..1).next())
         }
-
-        if self.tokens.len() == 0
+        else
         {
-            self.done = true;
-            return Ok(None);
+            Ok(None)
         }
-
-        Ok(self.tokens.drain(0..1).next())
     }
 }
 
@@ -477,6 +473,8 @@ impl<'de> Iterator for ScanIter<'de>
         dbg!(self.next_token().transpose())
     }
 }
+
+impl<'de> std::iter::FusedIterator for ScanIter<'de> {}
 
 enum DirectiveKind
 {
