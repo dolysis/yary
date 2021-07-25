@@ -3,6 +3,7 @@
 #[macro_use]
 mod macros;
 
+mod context;
 mod error;
 mod key;
 mod scalar;
@@ -13,6 +14,7 @@ use std::ops::{Add, AddAssign};
 use atoi::atoi;
 
 use self::{
+    context::Context,
     error::{ScanError, ScanResult as Result},
     key::Key,
 };
@@ -29,10 +31,11 @@ type Tokens<'de> = Vec<Token<'de>>;
 #[derive(Debug)]
 struct Scanner
 {
-    offset: usize,
-    stats:  MStats,
-    state:  StreamState,
-    key:    Key,
+    offset:  usize,
+    stats:   MStats,
+    state:   StreamState,
+    key:     Key,
+    context: Context,
 }
 
 impl Scanner
@@ -40,10 +43,11 @@ impl Scanner
     pub fn new() -> Self
     {
         Self {
-            offset: 0,
-            stats:  MStats::new(),
-            state:  StreamState::Start,
-            key:    Key::default(),
+            offset:  0,
+            stats:   MStats::new(),
+            state:   StreamState::Start,
+            key:     Key::default(),
+            context: Context::new(),
         }
     }
 
@@ -112,6 +116,14 @@ impl Scanner
             [TAG, ..] => self.tag(base, tokens),
             [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
             [VALUE, ..] if isWhiteSpaceZ!(~base, 1) => self.value(base, tokens),
+            [b @ FLOW_MAPPING_START, ..] | [b @ FLOW_SEQUENCE_START, ..] =>
+            {
+                self.flow_collection_start(base, tokens, *b == FLOW_MAPPING_START)
+            },
+            [b @ FLOW_MAPPING_END, ..] | [b @ FLOW_SEQUENCE_END, ..] =>
+            {
+                self.flow_collection_end(base, tokens, *b == FLOW_MAPPING_END)
+            },
             _ => unreachable!(),
         }
     }
@@ -121,7 +133,7 @@ impl Scanner
         if self.state == StreamState::Start
         {
             // A key is allowed at the beginning of the stream
-            self.key.possible(!REQUIRED);
+            self.key_possible(!REQUIRED);
 
             self.state = StreamState::Stream;
 
@@ -165,7 +177,7 @@ impl Scanner
         // here when we do
         if stats.lines != 0
         {
-            self.key.possible(!REQUIRED);
+            self.key_possible(!REQUIRED);
         }
 
         advance!(*buffer, amt);
@@ -284,7 +296,7 @@ impl Scanner
         advance!(buffer, amt);
 
         // A key is possible after a tag
-        self.key.possible(!REQUIRED);
+        self.key_possible(!REQUIRED);
 
         // !named_tag!type-suffix "my tagged value"
         //                       ^^^^^^^^^^^^^^^^^^ buffer
@@ -346,7 +358,7 @@ impl Scanner
         };
 
         // A key is possible after an anchor or alias
-        self.key.possible(!REQUIRED);
+        self.key_possible(!REQUIRED);
 
         // *anchor 'rest of the line'
         //        ^^^^^^^^^^^^^^^^^^^ buffer.len
@@ -420,6 +432,66 @@ impl Scanner
         tokens.push(token);
 
         Ok(())
+    }
+
+    fn flow_collection_start<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+        map: bool,
+    ) -> Result<()>
+    {
+        self.key_possible(!REQUIRED);
+
+        self.context.flow_increment()?;
+
+        advance!(*base, :self.stats, 1);
+
+        let token = match map
+        {
+            true => Token::FlowMappingStart,
+            false => Token::FlowSequenceStart,
+        };
+
+        tokens.push(token);
+
+        Ok(())
+    }
+
+    fn flow_collection_end<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+        map: bool,
+    ) -> Result<()>
+    {
+        self.context.flow_decrement()?;
+
+        self.key_possible(!REQUIRED);
+
+        advance!(*base, :self.stats, 1);
+
+        let token = match map
+        {
+            true => Token::FlowMappingEnd,
+            false => Token::FlowSequenceEnd,
+        };
+
+        tokens.push(token);
+
+        Ok(())
+    }
+
+    /// Set scanner key state to possible, or alternatively,
+    /// required
+    fn key_possible(&mut self, required: bool)
+    {
+        // A key is required if we are in the block context, and the
+        // current column equals the indentation level
+        let required =
+            required || (self.context.is_block() && self.context.indent() == self.stats.column);
+
+        self.key.possible(required)
     }
 
     fn key_forbidden(&mut self)
@@ -736,6 +808,10 @@ const TAG: u8 = b'!';
 const SINGLE: u8 = b'\'';
 const DOUBLE: u8 = b'"';
 const VALUE: u8 = b':';
+const FLOW_MAPPING_START: u8 = b'{';
+const FLOW_MAPPING_END: u8 = b'}';
+const FLOW_SEQUENCE_START: u8 = b'[';
+const FLOW_SEQUENCE_END: u8 = b']';
 
 const COMMENTS: bool = true;
 const REQUIRED: bool = true;
