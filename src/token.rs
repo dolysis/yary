@@ -190,7 +190,7 @@ impl PartialEq<Token<'_>> for Marker
 {
     fn eq(&self, other: &Token<'_>) -> bool
     {
-        *self == Self::from(other)
+        self == &Self::from(other)
     }
 }
 
