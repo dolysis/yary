@@ -879,6 +879,42 @@ mod tests
     }
 
     #[test]
+    fn flow_collection_mapping_indicators()
+    {
+        let data = "{}";
+        let mut s = ScanIter::new(data);
+
+        // Note that the doubled braces here are because of Rust's
+        // fmtstr escaping rules.
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::FlowMappingStart                   => "expected a flow mapping start '{{'",
+            | Token::FlowMappingEnd                     => "expected a flow mapping end '}}'",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
+    }
+
+    #[test]
+    fn flow_collection_sequence_indicators()
+    {
+        let data = "[]";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::FlowSequenceStart                  => "expected a flow sequence start '['",
+            | Token::FlowSequenceEnd                    => "expected a flow sequence end ']'",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
+    }
+
+    #[test]
     fn chomp_comments()
     {
         let data = "  # a comment\n\n#one two three\n       #four!";
