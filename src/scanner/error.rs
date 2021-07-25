@@ -45,6 +45,9 @@ pub enum ScanError
 
     /// Got end of stream while parsing a token
     UnexpectedEOF,
+
+    /// An integer overflowed
+    IntOverflow,
 }
 
 impl fmt::Display for ScanError
