@@ -122,7 +122,6 @@ impl Scanner
             {
                 // A key is allowed at the beginning of the stream
                 self.key.possible(!REQUIRED);
-                self.key.line = self.stats.lines;
 
                 self.state = StreamState::Stream;
 
