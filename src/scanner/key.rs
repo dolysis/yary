@@ -25,7 +25,7 @@ impl Key
 
     /// A key is impossible / illegal at the current stream
     /// position
-    pub fn impossible(&mut self)
+    pub fn forbidden(&mut self)
     {
         self.possible = Some(KeyPossible::No)
     }
