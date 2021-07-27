@@ -730,6 +730,47 @@ fn check_is_key(buffer: &str, key_stats: &MStats, required: bool, extendable: bo
     Ok(is_key)
 }
 
+fn roll_indent<'de>(
+    context: &mut Context,
+    tokens: &mut Tokens<'de>,
+    column: usize,
+    map: bool,
+) -> Result<()>
+{
+    if context.is_block() && context.indent() < column
+    {
+        context.indent_increment(column)?;
+
+        let token = match map
+        {
+            true => Token::BlockMappingStart,
+            false => Token::BlockSequenceStart,
+        };
+
+        tokens.push(token);
+    }
+
+    Ok(())
+}
+
+fn unroll_indent<'de>(context: &mut Context, tokens: &mut Tokens<'de>, column: usize)
+    -> Result<()>
+{
+    if context.is_block()
+    {
+        let generator = |_| {
+            let token = Token::BlockEnd;
+            tokens.push(token);
+
+            Ok(())
+        };
+
+        context.indent_decrement(column, generator)?;
+    }
+
+    Ok(())
+}
+
 /// Vessel for tracking various stats about the underlying
 /// buffer that are required for correct parsing of certain
 /// elements, and when contextualizing an error.
