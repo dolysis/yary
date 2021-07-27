@@ -124,6 +124,7 @@ impl Scanner
             {
                 self.flow_collection_end(base, tokens, *b == FLOW_MAPPING_END)
             },
+            [FLOW_ENTRY, ..] => self.flow_collection_entry(base, tokens),
             _ => unreachable!(),
         }
     }
@@ -482,6 +483,48 @@ impl Scanner
         Ok(())
     }
 
+    fn flow_collection_entry<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
+    {
+        self.key_possible(!REQUIRED);
+
+        advance!(*base, :self.stats, 1);
+
+        let token = Token::FlowEntry;
+
+        tokens.push(token);
+
+        Ok(())
+    }
+
+    fn block_collection_entry<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
+    {
+        match self.context.is_block() && self.key.allowed()
+        {
+            true => roll_indent(&mut self.context, tokens, self.stats.column, !BLOCK_MAP),
+            false => Err(ScanError::InvalidBlockEntry),
+        }?;
+
+        self.is_key_required()?;
+
+        // A key is possible after a '-'
+        self.key_possible(!REQUIRED);
+
+        advance!(*base, :self.stats, 1);
+
+        let token = Token::BlockEntry;
+        tokens.push(token);
+
+        Ok(())
+    }
+
     /// Set scanner key state to possible, or alternatively,
     /// required
     fn key_possible(&mut self, required: bool)
@@ -492,6 +535,16 @@ impl Scanner
             required || (self.context.is_block() && self.context.indent() == self.stats.column);
 
         self.key.possible(required)
+    }
+
+    fn is_key_required(&mut self) -> Result<()>
+    {
+        if self.key.required()
+        {
+            return Err(ScanError::MissingValue);
+        }
+
+        Ok(())
     }
 
     fn key_forbidden(&mut self)
@@ -853,9 +906,11 @@ const FLOW_MAPPING_START: u8 = b'{';
 const FLOW_MAPPING_END: u8 = b'}';
 const FLOW_SEQUENCE_START: u8 = b'[';
 const FLOW_SEQUENCE_END: u8 = b']';
+const FLOW_ENTRY: u8 = b',';
 
 const COMMENTS: bool = true;
 const REQUIRED: bool = true;
+const BLOCK_MAP: bool = true;
 const BUG: &str = "LIBRARY BUG!! HIT AN UNREACHABLE STATEMENT";
 
 #[cfg(test)]
