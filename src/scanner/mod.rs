@@ -1011,6 +1011,31 @@ mod tests
     }
 
     #[test]
+    fn flow_collection_sequence()
+    {
+        use ScalarStyle::SingleQuote;
+        let data = "['a key': 'a value','another key': 'another value']";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            | Token::FlowSequenceStart                          => "expected a flow sequence start '['",
+            | Token::Key                                        => "expected a key",
+            | Token::Scalar(cow!("a key"), SingleQuote)         => "expected a scalar key: 'a key'",
+            | Token::Value                                      => "expected a value",
+            | Token::Scalar(cow!("a value"), SingleQuote)       => "expected a scalar value: 'a value'",
+            | Token::FlowEntry                                  => "expected a flow entry: ','",
+            | Token::Key                                        => "expected a key",
+            | Token::Scalar(cow!("another key"), SingleQuote)   => "expected a scalar key: 'another key'",
+            | Token::Value                                      => "expected a value",
+            | Token::Scalar(cow!("another value"), SingleQuote) => "expected a scalar value: 'another value'",
+            | Token::FlowSequenceEnd                            => "expected a flow sequence end ']'",
+            | Token::StreamEnd                                  => "expected end of stream",
+            @ None                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn chomp_comments()
     {
         let data = "  # a comment\n\n#one two three\n       #four!";
