@@ -783,6 +783,8 @@ fn check_is_key(buffer: &str, key_stats: &MStats, required: bool, extendable: bo
     Ok(is_key)
 }
 
+/// Roll the indentation level and push a block collection
+/// indent token to the indent stack if required
 fn roll_indent<'de>(
     context: &mut Context,
     tokens: &mut Tokens<'de>,
@@ -806,6 +808,9 @@ fn roll_indent<'de>(
     Ok(())
 }
 
+/// Unroll indentation level until we reach .column, pushing
+/// a block collection unindent token for every stored
+/// indent level
 fn unroll_indent<'de>(context: &mut Context, tokens: &mut Tokens<'de>, column: usize)
     -> Result<()>
 {
@@ -1011,6 +1016,31 @@ mod tests
     }
 
     #[test]
+    fn flow_collection_mapping()
+    {
+        use ScalarStyle::SingleQuote;
+        let data = "{'a key': 'a value','another key': 'another value'}";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)          => "expected start of stream",
+            | Token::FlowMappingStart                           => "expected a flow mapping start '{{'",
+            | Token::Key                                        => "expected a key",
+            | Token::Scalar(cow!("a key"), SingleQuote)         => "expected a scalar key: 'a key'",
+            | Token::Value                                      => "expected a value",
+            | Token::Scalar(cow!("a value"), SingleQuote)       => "expected a scalar value: 'a value'",
+            | Token::FlowEntry                                  => "expected a flow entry: ','",
+            | Token::Key                                        => "expected a key",
+            | Token::Scalar(cow!("another key"), SingleQuote)   => "expected a scalar key: 'another key'",
+            | Token::Value                                      => "expected a value",
+            | Token::Scalar(cow!("another value"), SingleQuote) => "expected a scalar value: 'another value'",
+            | Token::FlowMappingEnd                             => "expected a flow mapping end '}}'",
+            | Token::StreamEnd                                  => "expected end of stream",
+            @ None                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn flow_collection_sequence()
     {
         use ScalarStyle::SingleQuote;
@@ -1033,6 +1063,81 @@ mod tests
             | Token::StreamEnd                                  => "expected end of stream",
             @ None                                              => "expected stream to be finished"
         );
+    }
+
+    #[test]
+    fn flow_collection_nested()
+    {
+        use ScalarStyle::SingleQuote;
+        let data = "[
+            {'a map': 'of values'},
+            {'inside': 'a sequence'},
+            'a string',
+            ['and', 'lists','of', 'strings'],
+            {'wow': {'this': {'nesting': {'goes': ['deep', '!']}}}}
+        ]";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            | Token::FlowSequenceStart,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("a map"), SingleQuote),
+            | Token::Value,
+            | Token::Scalar(cow!("of values"), SingleQuote),
+            | Token::FlowMappingEnd,
+            | Token::FlowEntry,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("inside"), SingleQuote),
+            | Token::Value,
+            | Token::Scalar(cow!("a sequence"), SingleQuote),
+            | Token::FlowMappingEnd,
+            | Token::FlowEntry,
+            | Token::Scalar(cow!("a string"), SingleQuote),
+            | Token::FlowEntry,
+            | Token::FlowSequenceStart,
+            | Token::Scalar(cow!("and"), SingleQuote),
+            | Token::FlowEntry,
+            | Token::Scalar(cow!("lists"), SingleQuote),
+            | Token::FlowEntry,
+            | Token::Scalar(cow!("of"), SingleQuote),
+            | Token::FlowEntry,
+            | Token::Scalar(cow!("strings"), SingleQuote),
+            | Token::FlowSequenceEnd,
+            | Token::FlowEntry,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("wow"), SingleQuote),
+            | Token::Value,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("this"), SingleQuote),
+            | Token::Value,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("nesting"), SingleQuote),
+            | Token::Value,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("goes"), SingleQuote),
+            | Token::Value,
+            | Token::FlowSequenceStart,
+            | Token::Scalar(cow!("deep"), SingleQuote),
+            | Token::FlowEntry,
+            | Token::Scalar(cow!("!"), SingleQuote),
+            | Token::FlowSequenceEnd,
+            | Token::FlowMappingEnd,
+            | Token::FlowMappingEnd,
+            | Token::FlowMappingEnd,
+            | Token::FlowMappingEnd,
+            | Token::FlowSequenceEnd,
+            | Token::StreamEnd,
+            @ None
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
