@@ -61,12 +61,18 @@ impl Context
 
     pub fn flow_increment(&mut self) -> Result<usize>
     {
-        self.flow.checked_add(1).ok_or(ScanError::IntOverflow)
+        let new = self.flow.checked_add(1).ok_or(ScanError::IntOverflow)?;
+        self.flow = new;
+
+        Ok(new)
     }
 
     pub fn flow_decrement(&mut self) -> Result<usize>
     {
-        self.flow.checked_sub(1).ok_or(ScanError::IntOverflow)
+        let new = self.flow.checked_sub(1).ok_or(ScanError::IntOverflow)?;
+        self.flow = new;
+
+        Ok(new)
     }
 
     /// Get the current indent level
