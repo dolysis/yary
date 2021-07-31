@@ -537,16 +537,36 @@ impl Scanner
         Ok(())
     }
 
-    /// Set scanner key state to possible, or alternatively,
-    /// required
-    fn key_possible(&mut self, required: bool)
+    /// Save a position in the buffer as a potential simple
+    /// key location, if a simple key is possible
+    fn save_key(&mut self, required: bool) -> Result<()>
     {
         // A key is required if we are in the block context, and the
         // current column equals the indentation level
         let required =
             required || (self.context.is_block() && self.context.indent() == self.stats.column);
 
-        self.key.possible(required)
+        if self.simple_key_allowed
+        {
+            self.remove_saved_key()?;
+
+            self.key.save(self.stats.clone(), required)
+        }
+
+        Ok(())
+    }
+
+    fn remove_saved_key(&mut self) -> Result<()>
+    {
+        if let Some(saved) = self.key.saved().take()
+        {
+            if saved.key().required()
+            {
+                return Err(ScanError::MissingValue);
+            }
+        }
+
+        Ok(())
     }
 
     fn is_key_required(&mut self) -> Result<()>
