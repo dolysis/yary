@@ -16,10 +16,12 @@ use atoi::atoi;
 
 use self::{
     context::Context,
+    entry::TokenEntry,
     error::{ScanError, ScanResult as Result},
     key::Key,
 };
 use crate::{
+    queue::Queue,
     scanner::{
         scalar::flow::scan_flow_scalar,
         tag::{scan_node_tag, scan_tag_directive},
@@ -27,14 +29,23 @@ use crate::{
     token::{StreamEncoding, Token},
 };
 
-type Tokens<'de> = Vec<Token<'de>>;
+type Tokens<'de> = Queue<TokenEntry<'de>>;
 
 #[derive(Debug)]
 struct Scanner
 {
-    offset:  usize,
+    /// Offset into the data buffer to start at
+    offset: usize,
+
+    /// Current stream state
+    state: StreamState,
+
+    /// Can a simple (i.e not complex) key potentially start
+    /// at the current position?
+    simple_key_allowed: bool,
+
+    // Subsystems
     stats:   MStats,
-    state:   StreamState,
     key:     Key,
     context: Context,
 }
