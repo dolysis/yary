@@ -153,7 +153,7 @@ impl Scanner
 
             let token = Token::StreamStart(StreamEncoding::UTF8);
 
-            tokens.push(token)
+            enqueue!(token, :self.stats => tokens);
         }
     }
 
@@ -169,7 +169,7 @@ impl Scanner
 
                 let token = Token::StreamEnd;
 
-                tokens.push(token);
+                enqueue!(token, :self.stats => tokens);
             },
             (_, false) =>
             {},
@@ -216,7 +216,7 @@ impl Scanner
             // A key cannot follow a document marker
             self.simple_key_allowed = false;
 
-            tokens.push(token)
+            enqueue!(token, :self.stats => tokens);
         }
     }
 
@@ -287,7 +287,7 @@ impl Scanner
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -317,7 +317,7 @@ impl Scanner
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -379,7 +379,7 @@ impl Scanner
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -418,7 +418,7 @@ impl Scanner
         advance!(*base, amt);
         self.stats += stats;
 
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -442,7 +442,7 @@ impl Scanner
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -507,7 +507,7 @@ impl Scanner
 
         let token = Token::FlowEntry;
 
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -532,7 +532,7 @@ impl Scanner
         advance!(*base, :self.stats, 1);
 
         let token = Token::BlockEntry;
-        tokens.push(token);
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
