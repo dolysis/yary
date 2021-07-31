@@ -68,20 +68,23 @@ impl Scanner
     /// returning the number added.
     pub fn scan_tokens<'de>(&mut self, base: &'de str, tokens: &mut Tokens<'de>) -> Result<usize>
     {
-        if let Some(mut buffer) = base
-            .get(self.offset..)
-            .filter(|_| self.state != StreamState::Done)
+        let mut num_tokens = 0;
+        let starting_tokens = tokens.len();
+
+        while self.state != StreamState::Done
+            && (starting_tokens == tokens.len() || self.key.possible())
         {
-            let existing_tokens = tokens.len();
+            if let Some(mut buffer) = base.get(self.offset..)
+            {
+                self.scan_next_token(&mut buffer, tokens)?;
 
-            self.scan_next_token(&mut buffer, tokens)?;
+                self.offset = base.len() - buffer.len();
 
-            self.offset = base.len() - buffer.len();
-
-            return Ok(tokens.len() - existing_tokens);
+                num_tokens = tokens.len() - starting_tokens;
+            }
         }
 
-        Ok(0)
+        Ok(num_tokens)
     }
 
     fn scan_next_token<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>)
