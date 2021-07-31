@@ -410,10 +410,24 @@ impl Scanner
         // FIXME: we need to allow Scanner callers to indicate
         // whether the buffer they provide is growable
         const EXTENDABLE: bool = false;
-        if self.key.allowed()
-            && check_is_key(&buffer[amt..], &stats, self.key.required(), EXTENDABLE)?
+        if let Some(saved) = self.key.saved().take()
         {
-            tokens.push(Token::Key)
+            if check_is_key(&buffer[amt..], &stats, saved.key().required(), EXTENDABLE)?
+            {
+                let key_stats = saved.stats();
+                // Roll the indent and push a block mapping start token if
+                // necessary
+                roll_indent(
+                    &mut self.context,
+                    key_stats.read,
+                    tokens,
+                    key_stats.column,
+                    BLOCK_MAP,
+                )?;
+
+                // Then push a token to the queue
+                enqueue!(Token::Key, :key_stats => tokens);
+            }
         }
 
         // A key cannot follow a flow scalar, as we're either
