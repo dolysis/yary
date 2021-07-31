@@ -608,21 +608,6 @@ impl Scanner
 
         Ok(())
     }
-
-    fn is_key_required(&mut self) -> Result<()>
-    {
-        if self.key.required()
-        {
-            return Err(ScanError::MissingValue);
-        }
-
-        Ok(())
-    }
-
-    fn key_forbidden(&mut self)
-    {
-        self.key.forbidden()
-    }
 }
 
 struct ScanIter<'de>
