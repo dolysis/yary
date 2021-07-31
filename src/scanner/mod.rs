@@ -1590,6 +1590,7 @@ mod tests
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
             | Token::Key                                => "expected an implicit key",
             | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
             | Token::Value                              => "expected a value token",
@@ -1608,6 +1609,7 @@ mod tests
 
         tokens!(s =>
             | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
             | Token::Key                                => "expected an implicit key",
             | Token::Scalar(cow!("key1"), SingleQuote)  => "expected a flow scalar (single)",
             | Token::Value                              => "expected a value token",
@@ -1689,15 +1691,16 @@ mod tests
             | Token::TagDirective(cow!("!!"), cow!("secondary/namespace:")),
             | Token::TagDirective(cow!("!named0!"), cow!("named0:")),
             | Token::DocumentStart,
-            | Token::Tag(cow!("!!"), cow!("str")),
+            | Token::BlockMappingStart,
             | Token::Key,
+            | Token::Tag(cow!("!!"), cow!("str")),
             | Token::Scalar(cow!("an anchor"), DoubleQuote),
             | Token::Value,
             | Token::Anchor(cow!("ref")),
             | Token::Tag(cow!("!"), cow!("value")),
             | Token::Scalar(cow!("some value"), SingleQuote),
-            | Token::Tag(cow!("!!"), cow!("str")),
             | Token::Key,
+            | Token::Tag(cow!("!!"), cow!("str")),
             | Token::Scalar(cow!("an alias"), SingleQuote),
             | Token::Value,
             | Token::Alias(cow!("ref")),
