@@ -97,8 +97,7 @@ impl Scanner
 
         if base.is_empty() || self.state == StreamState::Done
         {
-            self.stream_end(*base, tokens);
-            return Ok(());
+            return self.stream_end(*base, tokens);
         }
 
         if self.stats.column == 0
@@ -157,7 +156,7 @@ impl Scanner
         }
     }
 
-    fn stream_end(&mut self, buffer: &str, tokens: &mut Tokens)
+    fn stream_end(&mut self, buffer: &str, tokens: &mut Tokens) -> Result<()>
     {
         match (self.state, buffer.is_empty())
         {
@@ -165,6 +164,7 @@ impl Scanner
             {},
             (_, true) =>
             {
+                self.remove_saved_key()?;
                 self.state = StreamState::Done;
 
                 let token = Token::StreamEnd;
@@ -174,6 +174,8 @@ impl Scanner
             (_, false) =>
             {},
         }
+
+        Ok(())
     }
 
     /// Chomp whitespace and optionally comments until we
@@ -305,6 +307,8 @@ impl Scanner
             return Ok(());
         }
 
+        self.save_key(!REQUIRED)?;
+
         let (token, amt) = scan_node_tag(buffer, &mut stats)?;
         advance!(buffer, amt);
 
@@ -337,6 +341,8 @@ impl Scanner
             },
             _ => return Ok(()),
         };
+
+        self.save_key(!REQUIRED)?;
 
         advance!(buffer, :stats, 1);
 
@@ -384,8 +390,7 @@ impl Scanner
         Ok(())
     }
 
-    fn flow_scalar<'de>(&mut self, base: &mut &'de str, tokens: &mut Vec<Token<'de>>)
-        -> Result<()>
+    fn flow_scalar<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let buffer = *base;
         let mut stats = MStats::new();
@@ -395,6 +400,8 @@ impl Scanner
         {
             return Ok(());
         }
+
+        self.save_key(!REQUIRED)?;
 
         let (range, amt) = scan_flow_scalar(buffer, &mut stats, single)?;
         let token = range.into_token(buffer)?;
@@ -454,19 +461,22 @@ impl Scanner
         map: bool,
     ) -> Result<()>
     {
-        self.key_possible(!REQUIRED);
-
-        self.context.flow_increment()?;
-
-        advance!(*base, :self.stats, 1);
-
         let token = match map
         {
             true => Token::FlowMappingStart,
             false => Token::FlowSequenceStart,
         };
 
-        tokens.push(token);
+        self.context.flow_increment()?;
+
+        advance!(*base, :self.stats, 1);
+
+        enqueue!(token, :self.stats => tokens);
+
+        self.save_key(!REQUIRED)?;
+
+        // A simple key may start after '[' or '{'
+        self.simple_key_allowed = true;
 
         Ok(())
     }
@@ -478,19 +488,24 @@ impl Scanner
         map: bool,
     ) -> Result<()>
     {
-        self.context.flow_decrement()?;
-
-        self.key_possible(!REQUIRED);
-
-        advance!(*base, :self.stats, 1);
-
         let token = match map
         {
             true => Token::FlowMappingEnd,
             false => Token::FlowSequenceEnd,
         };
 
-        tokens.push(token);
+        // Reset saved key
+        self.remove_saved_key()?;
+
+        // Decrease flow level by 1
+        self.context.flow_decrement()?;
+
+        // A simple key is not allowed after a ']' or '}'
+        self.simple_key_allowed = false;
+
+        advance!(*base, :self.stats, 1);
+
+        enqueue!(token, :self.stats => tokens);
 
         Ok(())
     }
@@ -501,7 +516,11 @@ impl Scanner
         tokens: &mut Tokens<'de>,
     ) -> Result<()>
     {
-        self.key_possible(!REQUIRED);
+        // Reset saved key
+        self.remove_saved_key()?;
+
+        // A simple key can start after a ','
+        self.simple_key_allowed = true;
 
         advance!(*base, :self.stats, 1);
 
@@ -524,7 +543,8 @@ impl Scanner
             false => Err(ScanError::InvalidBlockEntry),
         }?;
 
-        self.is_key_required()?;
+        // Reset saved key
+        self.remove_saved_key()?;
 
         // A key is possible after a '-'
         self.simple_key_allowed = true;
