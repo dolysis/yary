@@ -839,6 +839,7 @@ fn check_is_key(buffer: &str, key_stats: &MStats, required: bool, extendable: bo
 /// indent token to the indent stack if required
 fn roll_indent<'de>(
     context: &mut Context,
+    mark: usize,
     tokens: &mut Tokens<'de>,
     column: usize,
     map: bool,
@@ -854,7 +855,7 @@ fn roll_indent<'de>(
             false => Token::BlockSequenceStart,
         };
 
-        tokens.push(token);
+        enqueue!(token, mark => tokens);
     }
 
     Ok(())
@@ -863,14 +864,18 @@ fn roll_indent<'de>(
 /// Unroll indentation level until we reach .column, pushing
 /// a block collection unindent token for every stored
 /// indent level
-fn unroll_indent<'de>(context: &mut Context, tokens: &mut Tokens<'de>, column: usize)
-    -> Result<()>
+fn unroll_indent<'de>(
+    context: &mut Context,
+    mark: usize,
+    tokens: &mut Tokens<'de>,
+    column: usize,
+) -> Result<()>
 {
     if context.is_block()
     {
         let generator = |_| {
             let token = Token::BlockEnd;
-            tokens.push(token);
+            enqueue!(token, mark => tokens);
 
             Ok(())
         };
