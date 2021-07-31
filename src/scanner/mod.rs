@@ -551,9 +551,15 @@ impl Scanner
         tokens: &mut Tokens<'de>,
     ) -> Result<()>
     {
-        match self.context.is_block() && self.key.allowed()
+        match self.context.is_block() && self.simple_key_allowed
         {
-            true => roll_indent(&mut self.context, tokens, self.stats.column, !BLOCK_MAP),
+            true => roll_indent(
+                &mut self.context,
+                self.stats.read,
+                tokens,
+                self.stats.column,
+                !BLOCK_MAP,
+            ),
             false => Err(ScanError::InvalidBlockEntry),
         }?;
 
