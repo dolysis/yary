@@ -635,7 +635,7 @@ impl<'de> ScanIter<'de>
         Self {
             data,
             scan: Scanner::new(),
-            tokens: Vec::new(),
+            tokens: Tokens::new(),
             done: false,
         }
     }
@@ -652,7 +652,7 @@ impl<'de> ScanIter<'de>
 
         if !self.done
         {
-            Ok(self.tokens.drain(0..1).next())
+            Ok(self.tokens.pop().map(|e| e.into_token()))
         }
         else
         {
