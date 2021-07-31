@@ -4,6 +4,7 @@
 mod macros;
 
 mod context;
+mod entry;
 mod error;
 mod key;
 mod scalar;
