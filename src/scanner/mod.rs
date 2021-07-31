@@ -55,11 +55,12 @@ impl Scanner
     pub fn new() -> Self
     {
         Self {
-            offset:  0,
-            stats:   MStats::new(),
-            state:   StreamState::Start,
-            key:     Key::default(),
-            context: Context::new(),
+            offset:             0,
+            simple_key_allowed: false,
+            stats:              MStats::new(),
+            state:              StreamState::Start,
+            key:                Key::default(),
+            context:            Context::new(),
         }
     }
 
@@ -146,7 +147,7 @@ impl Scanner
         if self.state == StreamState::Start
         {
             // A key is allowed at the beginning of the stream
-            self.key_possible(!REQUIRED);
+            self.simple_key_allowed = true;
 
             self.state = StreamState::Stream;
 
@@ -190,7 +191,7 @@ impl Scanner
         // here when we do
         if stats.lines != 0
         {
-            self.key_possible(!REQUIRED);
+            self.simple_key_allowed = true;
         }
 
         advance!(*buffer, amt);
@@ -213,8 +214,7 @@ impl Scanner
             advance!(*buffer, :self.stats, 3);
 
             // A key cannot follow a document marker
-            // (though a scalar can)
-            self.key_forbidden();
+            self.simple_key_allowed = false;
 
             tokens.push(token)
         }
@@ -279,7 +279,7 @@ impl Scanner
         };
 
         // A key cannot follow a directive (a newline is required)
-        self.key_forbidden();
+        self.simple_key_allowed = false;
 
         // %YAML 1.1 # some comment\n
         //          ^^^^^^^^^^^^^^^^^ buffer
@@ -308,8 +308,8 @@ impl Scanner
         let (token, amt) = scan_node_tag(buffer, &mut stats)?;
         advance!(buffer, amt);
 
-        // A key is possible after a tag
-        self.key_possible(!REQUIRED);
+        // A key may not start after a tag (only before)
+        self.simple_key_allowed = false;
 
         // !named_tag!type-suffix "my tagged value"
         //                       ^^^^^^^^^^^^^^^^^^ buffer
@@ -370,8 +370,8 @@ impl Scanner
             AnchorKind::Anchor => Token::Anchor(cow!(anchor)),
         };
 
-        // A key is possible after an anchor or alias
-        self.key_possible(!REQUIRED);
+        // A key may not start after an anchor (only before)
+        self.simple_key_allowed = false;
 
         // *anchor 'rest of the line'
         //        ^^^^^^^^^^^^^^^^^^^ buffer.len
@@ -413,7 +413,7 @@ impl Scanner
         // currently in a key (which should be followed by a
         // value), or a value which needs a separator (e.g line
         // break) before another key is legal
-        self.key_forbidden();
+        self.simple_key_allowed = false;
 
         advance!(*base, amt);
         self.stats += stats;
@@ -436,8 +436,8 @@ impl Scanner
         let token = Token::Value;
         advance!(buffer, :stats, 1);
 
-        // A key cannot follow a value
-        self.key_forbidden();
+        // Simple keys may start after a ':' in the block context
+        self.simple_key_allowed = self.context.is_block();
 
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
@@ -527,7 +527,7 @@ impl Scanner
         self.is_key_required()?;
 
         // A key is possible after a '-'
-        self.key_possible(!REQUIRED);
+        self.simple_key_allowed = true;
 
         advance!(*base, :self.stats, 1);
 
