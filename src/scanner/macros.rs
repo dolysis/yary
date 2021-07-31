@@ -173,6 +173,24 @@ macro_rules! check {
     };
 }
 
+/// Pushes a token into the token queue, updating the tokens
+/// read
+///
+/// Variants
+///     /1 .token, :.stats => .tokens
+///     /2 .token, .read => .tokens
+macro_rules! enqueue {
+    ($token:expr, :$stats:expr => $tokens:expr) => {
+        enqueue!($token, $stats.read => $tokens)
+    };
+    ($token:expr, $read:expr => $tokens:expr) => {
+        $tokens.push(crate::scanner::entry::TokenEntry::new(
+            $token,
+            $read,
+        ))
+    };
+}
+
 /// Check if the byte (@ .offset) is a line break
 ///
 /// Modifiers
