@@ -15,7 +15,7 @@ use std::ops::{Add, AddAssign};
 use atoi::atoi;
 
 use self::{
-    context::Context,
+    context::{Context, Indent},
     entry::TokenEntry,
     error::{ScanError, ScanResult as Result},
     key::{Key, KeyPossible},
@@ -23,6 +23,7 @@ use self::{
 use crate::{
     queue::Queue,
     scanner::{
+        context::STARTING_INDENT,
         scalar::flow::scan_flow_scalar,
         tag::{scan_node_tag, scan_tag_directive},
     },
@@ -100,51 +101,69 @@ impl Scanner
 
         self.expire_stale_saved_key()?;
 
+        self.unroll_indent(tokens, self.stats.column)?;
+
         if base.is_empty() || self.state == StreamState::Done
         {
             return self.stream_end(*base, tokens);
         }
 
-        if self.stats.column == 0
-            && isWhiteSpaceZ!(~base, 3)
-            && check!(~base => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
-        {
-            self.document_marker(base, tokens);
-            return Ok(());
-        }
-
-        /*
-         * The borrow checker currently does not understand that
-         * each "if let ..." above is terminal, and complains
-         * that possible multi mutable borrows of .scratch can
-         * occur. Its wrong, but I can't convince it the
-         * pattern is safe, so the best I can do is to lift the
-         * actual checks each function performs up into a
-         * match statement that the compiler understands
-         * is terminal.
-         *
-         * Hopefully in future this issue will be resolved and I
-         * can remove this match in favour of if guards
-         */
         match base.as_bytes()
         {
-            [DIRECTIVE, ..] => self.directive(base, tokens),
-            [ANCHOR, ..] | [ALIAS, ..] => self.anchor(base, tokens),
-            [TAG, ..] => self.tag(base, tokens),
-            [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
-            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) || self.context.is_flow() =>
+            // Is it a directive?
+            [DIRECTIVE, ..] if self.stats.column == 0 => self.directive(base, tokens),
+
+            // Is it a document marker?
+            [b @ b'-', b'-', b'-', ..] | [b @ b'.', b'.', b'.', ..]
+                if self.stats.column == 0 && isWhiteSpaceZ!(~base, 3) =>
             {
-                self.value(base, tokens)
+                self.document_marker(base, tokens, *b == b'-')
             },
+
+            // Is it the start of a flow collection?
             [b @ FLOW_MAPPING_START, ..] | [b @ FLOW_SEQUENCE_START, ..] =>
             {
                 self.flow_collection_start(base, tokens, *b == FLOW_MAPPING_START)
             },
+
+            // Is it the end of a flow collection?
             [b @ FLOW_MAPPING_END, ..] | [b @ FLOW_SEQUENCE_END, ..] =>
             {
                 self.flow_collection_end(base, tokens, *b == FLOW_MAPPING_END)
             },
+
+            // Is a flow collection entry?
             [FLOW_ENTRY, ..] => self.flow_collection_entry(base, tokens),
+
+            // Is it a block entry?
+            // TODO
+
+            // Is it an explicit key?
+            // TODO
+
+            // Is it a value?
+            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) || self.context.is_flow() =>
+            {
+                self.value(base, tokens)
+            },
+
+            // Is it an anchor or alias?
+            [ANCHOR, ..] | [ALIAS, ..] => self.anchor(base, tokens),
+
+            // Is it a tag?
+            [TAG, ..] => self.tag(base, tokens),
+
+            // Is it a block scalar?
+            // TODO
+
+            // Is it a flow scalar?
+            [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
+
+            // Is it a plain scalar?
+            // TODO
+
+            // Otherwise its an error
+            // TODO
             _ => unreachable!(),
         }
     }
@@ -172,12 +191,16 @@ impl Scanner
             {},
             (_, true) =>
             {
+                // Reset indent to starting level
+                self.unroll_indent(tokens, STARTING_INDENT)?;
+
+                // Reset saved key
                 self.remove_saved_key()?;
+
+                // Set stream state to finished
                 self.state = StreamState::Done;
 
-                let token = Token::StreamEnd;
-
-                enqueue!(token, :self.stats => tokens);
+                enqueue!(Token::StreamEnd, :self.stats => tokens);
             },
             (_, false) =>
             {},
@@ -210,24 +233,29 @@ impl Scanner
         amt
     }
 
-    fn document_marker(&mut self, buffer: &mut &str, tokens: &mut Tokens)
+    fn document_marker(&mut self, buffer: &mut &str, tokens: &mut Tokens, start: bool)
+        -> Result<()>
     {
-        if self.stats.column == 0 && isWhiteSpaceZ!(~buffer, 3)
+        let token = match start
         {
-            let token = match buffer.as_bytes()
-            {
-                [b'-', b'-', b'-', ..] => Token::DocumentStart,
-                [b'.', b'.', b'.', ..] => Token::DocumentEnd,
-                _ => return,
-            };
+            true => Token::DocumentStart,
+            false => Token::DocumentEnd,
+        };
 
-            advance!(*buffer, :self.stats, 3);
+        // Reset indent to starting level
+        self.unroll_indent(tokens, STARTING_INDENT)?;
 
-            // A key cannot follow a document marker
-            self.simple_key_allowed = false;
+        // Reset saved key
+        self.remove_saved_key()?;
 
-            enqueue!(token, :self.stats => tokens);
-        }
+        // A key cannot follow a document marker
+        self.simple_key_allowed = false;
+
+        advance!(*buffer, :self.stats, 3);
+
+        enqueue!(token, :self.stats => tokens);
+
+        Ok(())
     }
 
     fn directive<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
@@ -239,6 +267,12 @@ impl Scanner
         {
             return Ok(());
         }
+
+        // Reset indent to starting level
+        self.unroll_indent(tokens, STARTING_INDENT)?;
+
+        // Reset saved key
+        self.remove_saved_key()?;
 
         // Safety: we check above that we have len >= 1 (e.g a '%')
         //
