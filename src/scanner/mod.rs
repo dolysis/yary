@@ -471,53 +471,57 @@ impl Scanner
     fn value<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         // If we found a simple key
-        if let Some(saved) = self.key.saved().take()
+        match self.key.saved().take()
         {
-            let key_stats = saved.stats();
-
-            // Increase the indentation level if required, adding a
-            // block mapping start token
-            roll_indent(
-                &mut self.context,
-                key_stats.read,
-                tokens,
-                key_stats.column,
-                BLOCK_MAP,
-            )?;
-
-            // Then push a token to the queue
-            enqueue!(Token::Key, :key_stats => tokens);
-
-            // A key cannot follow another key
-            self.simple_key_allowed = false;
-        }
-        // Otherwise we must have found a complex key ('?') previously
-        else
-        {
-            let block_context = self.context.is_block();
-
-            if block_context
+            Some(saved) if saved.key().allowed() =>
             {
-                // Check if keys are legal
-                if !self.simple_key_allowed
-                {
-                    return Err(ScanError::InvalidValue);
-                }
+                let key_stats = saved.stats();
 
                 // Increase the indentation level if required, adding a
                 // block mapping start token
                 roll_indent(
                     &mut self.context,
-                    self.stats.read,
+                    key_stats.read,
                     tokens,
-                    self.stats.column,
+                    key_stats.column,
                     BLOCK_MAP,
                 )?;
-            }
 
-            // A simple key is allowed after a value in the block
-            // context
-            self.simple_key_allowed = block_context;
+                // Then push a token to the queue
+                enqueue!(Token::Key, :key_stats => tokens);
+
+                // A key cannot follow another key
+                self.simple_key_allowed = false;
+            },
+            // Otherwise we must have found a complex key ('?') previously, or a scalar that is an
+            // invalid key
+            _ =>
+            {
+                let block_context = self.context.is_block();
+
+                if block_context
+                {
+                    // Check if keys are legal
+                    if !self.simple_key_allowed
+                    {
+                        return Err(ScanError::InvalidValue);
+                    }
+
+                    // Increase the indentation level if required, adding a
+                    // block mapping start token
+                    roll_indent(
+                        &mut self.context,
+                        self.stats.read,
+                        tokens,
+                        self.stats.column,
+                        BLOCK_MAP,
+                    )?;
+                }
+
+                // A simple key is allowed after a value in the block
+                // context
+                self.simple_key_allowed = block_context;
+            },
         }
 
         advance!(*base, :self.stats, 1);
