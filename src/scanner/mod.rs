@@ -132,7 +132,10 @@ impl Scanner
             [ANCHOR, ..] | [ALIAS, ..] => self.anchor(base, tokens),
             [TAG, ..] => self.tag(base, tokens),
             [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
-            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) => self.value(base, tokens),
+            [VALUE, ..] if isWhiteSpaceZ!(~base, 1) || self.context.is_flow() =>
+            {
+                self.value(base, tokens)
+            },
             [b @ FLOW_MAPPING_START, ..] | [b @ FLOW_SEQUENCE_START, ..] =>
             {
                 self.flow_collection_start(base, tokens, *b == FLOW_MAPPING_START)
@@ -425,6 +428,9 @@ impl Scanner
         Ok(())
     }
 
+    /// Fetch a value token (':') from .base, adding to
+    /// .tokens. Also handles unwinding any saved
+    /// keys and indentation increases, as needed
     fn value<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         // If we found a simple key
