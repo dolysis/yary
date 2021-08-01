@@ -599,6 +599,13 @@ impl Scanner
         Ok(())
     }
 
+    fn unroll_indent<'de, T>(&mut self, tokens: &mut Tokens<'de>, column: T) -> Result<()>
+    where
+        T: Into<Indent>,
+    {
+        unroll_indent(&mut self.context, self.stats.read, tokens, column)
+    }
+
     /// Check if the current saved key (if it exists) has
     /// expired, removing it if it has
     fn expire_stale_saved_key(&mut self) -> Result<()>
@@ -888,12 +895,14 @@ fn roll_indent<'de>(
 /// Unroll indentation level until we reach .column, pushing
 /// a block collection unindent token for every stored
 /// indent level
-fn unroll_indent<'de>(
+fn unroll_indent<'de, T>(
     context: &mut Context,
     mark: usize,
     tokens: &mut Tokens<'de>,
-    column: usize,
+    column: T,
 ) -> Result<()>
+where
+    T: Into<Indent>,
 {
     if context.is_block()
     {

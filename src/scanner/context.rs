@@ -2,6 +2,8 @@ use std::ops::Add;
 
 use crate::scanner::error::{ScanError, ScanResult as Result};
 
+pub(in crate::scanner) const STARTING_INDENT: Indent = Indent(None);
+
 /// Manages the the current YAML context. Contexts are
 /// mutually exclusive, that is, you cannot be
 /// in both a Flow and Block context simultaneously.
@@ -111,19 +113,28 @@ impl Context
     /// Decrement the indent level calling .f for every
     /// level until .column > current_indent,
     /// returning the number of levels decremented
-    pub fn indent_decrement<F>(&mut self, column: usize, mut f: F) -> Result<usize>
+    pub fn indent_decrement<T, F>(&mut self, column: T, mut f: F) -> Result<usize>
     where
+        T: Into<Indent>,
         F: FnMut(usize) -> Result<()>,
     {
+        let column: Indent = column.into();
         let old = self.indents.len();
 
         if self.is_block()
         {
-            while self.indent > column
+            while Indent(Some(self.indent)) > column
             {
-                f(self.indent)?;
+                match self.indents.pop()
+                {
+                    Some(indent) =>
+                    {
+                        self.indent = indent;
 
-                self.indent = self.indents.pop().unwrap_or(0)
+                        f(self.indent)?;
+                    },
+                    None => break,
+                }
             }
         }
 
