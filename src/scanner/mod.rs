@@ -452,11 +452,6 @@ impl Scanner
         let mut buffer = *base;
         let mut stats = MStats::new();
 
-        if !(check!(~buffer => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1))
-        {
-            return Ok(());
-        }
-
         let token = Token::Value;
         advance!(buffer, :stats, 1);
 
