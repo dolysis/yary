@@ -18,7 +18,7 @@ use self::{
     context::Context,
     entry::TokenEntry,
     error::{ScanError, ScanResult as Result},
-    key::Key,
+    key::{Key, KeyPossible},
 };
 use crate::{
     queue::Queue,
@@ -97,6 +97,8 @@ impl Scanner
         }
 
         self.eat_whitespace(base, COMMENTS);
+
+        self.expire_stale_saved_key()?;
 
         if base.is_empty() || self.state == StreamState::Done
         {
@@ -571,6 +573,41 @@ impl Scanner
 
         let token = Token::BlockEntry;
         enqueue!(token, :self.stats => tokens);
+
+        Ok(())
+    }
+
+    /// Check if the current saved key (if it exists) has
+    /// expired, removing it if it has
+    fn expire_stale_saved_key(&mut self) -> Result<()>
+    {
+        if let Some(ref mut saved) = self.key.saved()
+        {
+            let key = saved.key();
+            let key_stats = saved.stats();
+
+            /*
+             * The YAML spec requires that implicit keys are
+             *
+             * 1. Limited to a single line
+             * 2. Must be less than 1024 characters, including
+             *    trailing whitespace to a ': '
+             *
+             * https://yaml.org/spec/1.2/spec.html#ns-s-implicit-yaml-key(c)
+             */
+            if key.allowed()
+                && (key_stats.lines < self.stats.lines || key_stats.read + 1024 < self.stats.read)
+            {
+                // If the key was required, it is an error for us not to
+                // have found it before the cutoff
+                if key.required()
+                {
+                    return Err(ScanError::MissingValue);
+                }
+
+                *saved.key_mut() = KeyPossible::No
+            }
+        }
 
         Ok(())
     }
