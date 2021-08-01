@@ -141,7 +141,7 @@ impl KeySave
             false => KeyPossible::Yes,
         };
 
-        Self { stats, possible }
+        Self { possible, stats }
     }
 
     /// Access the state of the saved key immutably
