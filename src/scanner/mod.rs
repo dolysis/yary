@@ -1873,6 +1873,66 @@ mod tests
     }
 
     #[test]
+    fn stale_required_key_oversized()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let expiry_len = std::str::from_utf8(&[b' '; 1025]).unwrap();
+        let data = format!(
+            "
+'a map': 'a key'
+'key start... then SPACE!!! {}': 'a value'",
+            expiry_len
+        );
+
+        let mut s = ScanIter::new(&data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            | Token::BlockMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("a map"), SingleQuote),
+            | Token::Value,
+            | Token::Scalar(cow!("a key"), SingleQuote),
+            > Result::<Token>::Err(ScanError::MissingValue) => "expected an error due to a required key"
+        );
+    }
+
+    #[test]
+    fn stale_key_oversized()
+    {
+        let expiry_len = std::str::from_utf8(&[b' '; 1025]).unwrap();
+        let data = format!(
+            "
+'key start... then SPACE!!! {}': 'a value'",
+            expiry_len
+        );
+
+        let mut s = ScanIter::new(&data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            > Result::<Token>::Err(ScanError::InvalidValue) => "expected an error due to oversized key"
+        );
+    }
+
+    #[test]
+    fn stale_key_after_newline()
+    {
+        let data = "
+'a multi-line
+ key': 'a value'
+";
+
+        let mut s = ScanIter::new(&data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            > Result::<Token>::Err(ScanError::InvalidValue) => "expected an error due to multi-line key"
+        );
+    }
+
+    #[test]
     fn eat_whitespace()
     {
         let data = "   abc";
