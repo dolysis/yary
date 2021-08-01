@@ -411,30 +411,6 @@ impl Scanner
         let (range, amt) = scan_flow_scalar(buffer, &mut stats, single)?;
         let token = range.into_token(buffer)?;
 
-        // If we found a key, save the scalar
-        // FIXME: we need to allow Scanner callers to indicate
-        // whether the buffer they provide is growable
-        const EXTENDABLE: bool = false;
-        if let Some(saved) = self.key.saved().take()
-        {
-            if check_is_key(&buffer[amt..], &stats, saved.key().required(), EXTENDABLE)?
-            {
-                let key_stats = saved.stats();
-                // Roll the indent and push a block mapping start token if
-                // necessary
-                roll_indent(
-                    &mut self.context,
-                    key_stats.read,
-                    tokens,
-                    key_stats.column,
-                    BLOCK_MAP,
-                )?;
-
-                // Then push a token to the queue
-                enqueue!(Token::Key, :key_stats => tokens);
-            }
-        }
-
         // A key cannot follow a flow scalar, as we're either
         // currently in a key (which should be followed by a
         // value), or a value which needs a separator (e.g line
@@ -451,19 +427,59 @@ impl Scanner
 
     fn value<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
-        let mut buffer = *base;
-        let mut stats = MStats::new();
+        // If we found a simple key
+        if let Some(saved) = self.key.saved().take()
+        {
+            let key_stats = saved.stats();
 
-        let token = Token::Value;
-        advance!(buffer, :stats, 1);
+            // Increase the indentation level if required, adding a
+            // block mapping start token
+            roll_indent(
+                &mut self.context,
+                key_stats.read,
+                tokens,
+                key_stats.column,
+                BLOCK_MAP,
+            )?;
 
-        // Simple keys may start after a ':' in the block context
-        self.simple_key_allowed = self.context.is_block();
+            // Then push a token to the queue
+            enqueue!(Token::Key, :key_stats => tokens);
 
-        advance!(*base, base.len() - buffer.len());
-        self.stats += stats;
+            // A key cannot follow another key
+            self.simple_key_allowed = false;
+        }
+        // Otherwise we must have found a complex key ('?') previously
+        else
+        {
+            let block_context = self.context.is_block();
 
-        enqueue!(token, :self.stats => tokens);
+            if block_context
+            {
+                // Check if keys are legal
+                if !self.simple_key_allowed
+                {
+                    return Err(ScanError::InvalidValue);
+                }
+
+                // Increase the indentation level if required, adding a
+                // block mapping start token
+                roll_indent(
+                    &mut self.context,
+                    self.stats.read,
+                    tokens,
+                    self.stats.column,
+                    BLOCK_MAP,
+                )?;
+            }
+
+            // A simple key is allowed after a value in the block
+            // context
+            self.simple_key_allowed = block_context;
+        }
+
+        advance!(*base, :self.stats, 1);
+
+        enqueue!(Token::Value, :self.stats => tokens);
 
         Ok(())
     }
@@ -835,44 +851,6 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
     }
 
     base.len() - buffer.len()
-}
-
-fn check_is_key(buffer: &str, key_stats: &MStats, required: bool, extendable: bool)
-    -> Result<bool>
-{
-    let mut stats = key_stats.clone();
-    let amt = eat_whitespace(buffer, &mut stats, !COMMENTS);
-
-    /*
-     * The YAML spec requires that implicit keys are
-     *
-     * 1. Limited to a single line
-     * 2. Must be less than 1024 characters, including
-     *    trailing whitespace to a ': '
-     *
-     * https://yaml.org/spec/1.2/spec.html#ns-s-implicit-yaml-key(c)
-     */
-    if stats.lines > 0 || stats.read > 1024
-    {
-        if required
-        {
-            return Err(ScanError::MissingValue);
-        }
-
-        return Ok(false);
-    }
-
-    // If the buffer has the possibility to be grown, we should
-    // error here, as it is possible we've hit a read
-    // boundary
-    if extendable && buffer[amt..].len() < 2
-    {
-        return Err(ScanError::UnexpectedEOF);
-    }
-
-    let is_key = check!(~buffer, amt => [VALUE, ..]) && isWhiteSpaceZ!(~buffer, 1);
-
-    Ok(is_key)
 }
 
 /// Roll the indentation level and push a block collection
