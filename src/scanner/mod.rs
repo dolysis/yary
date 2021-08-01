@@ -136,7 +136,10 @@ impl Scanner
             [FLOW_ENTRY, ..] => self.flow_collection_entry(base, tokens),
 
             // Is it a block entry?
-            // TODO
+            [BLOCK_ENTRY, ..] if isWhiteSpaceZ!(~base, 1) =>
+            {
+                self.block_collection_entry(base, tokens)
+            },
 
             // Is it an explicit key?
             // TODO
@@ -1036,6 +1039,7 @@ const FLOW_MAPPING_END: u8 = b'}';
 const FLOW_SEQUENCE_START: u8 = b'[';
 const FLOW_SEQUENCE_END: u8 = b']';
 const FLOW_ENTRY: u8 = b',';
+const BLOCK_ENTRY: u8 = b'-';
 
 const COMMENTS: bool = true;
 const REQUIRED: bool = true;
