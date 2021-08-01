@@ -1269,6 +1269,143 @@ mod tests
     }
 
     #[test]
+    fn block_collection_sequence()
+    {
+        use ScalarStyle::SingleQuote;
+        let data = "
+- 'a'
+- 'block'
+- 'sequence'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)      => "expected start of stream",
+            | Token::BlockSequenceStart                     => "expected a block sequence",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("a"), SingleQuote)         => "expected a flow scalar",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("block"), SingleQuote)     => "expected a flow scalar",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("sequence"), SingleQuote)  => "expected a flow scalar",
+            | Token::BlockEnd                               => "expected the end of a block collection",
+            | Token::StreamEnd                              => "expected end of stream",
+            @ None                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn block_collection_sequence_nested()
+    {
+        use ScalarStyle::SingleQuote;
+        let data = "
+- - 'a'
+  - 'nested'
+- 'block'
+- 'sequence'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)      => "expected start of stream",
+            | Token::BlockSequenceStart                     => "expected a block sequence",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::BlockSequenceStart                     => "expected a nested block sequence",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("a"), SingleQuote)         => "expected a flow scalar",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("nested"), SingleQuote)    => "expected a flow scalar",
+            | Token::BlockEnd                               => "expected the end of the nested sequence",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("block"), SingleQuote)     => "expected a flow scalar",
+            | Token::BlockEntry                             => "expected a block entry",
+            | Token::Scalar(cow!("sequence"), SingleQuote)  => "expected a flow scalar",
+            | Token::BlockEnd                               => "expected the end of a block collection",
+            | Token::StreamEnd                              => "expected end of stream",
+            @ None                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn block_collection_mapping_key_only()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "'key': ";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
+            | Token::Value                              => "expected a value token",
+            | Token::BlockEnd                           => "expected end of block mapping",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn block_collection_mapping()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "'key1': 'value1'\n'key2': 'value2'";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key1"), SingleQuote)  => "expected a flow scalar (single)",
+            | Token::Value                              => "expected a value token",
+            | Token::Scalar(cow!("value1"), SingleQuote)=> "expected a flow scalar (single)",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key2"), SingleQuote)  => "expected a flow scalar (single)",
+            | Token::Value                              => "expected a value token",
+            | Token::Scalar(cow!("value2"), SingleQuote)=> "expected a flow scalar (single)",
+            | Token::BlockEnd                           => "expected end of block mapping",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn block_collection_mapping_nested()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "
+'one':
+  'key': 'value'
+  'and': 'again'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("one"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value token",
+            | Token::BlockMappingStart                  => "expected start of nested mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value token",
+            | Token::Scalar(cow!("value"), SingleQuote) => "expected a flow scalar",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("and"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value token",
+            | Token::Scalar(cow!("again"), SingleQuote) => "expected a flow scalar",
+            | Token::BlockEnd                           => "expected end of nested mapping",
+            | Token::BlockEnd                           => "expected end of block mapping",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn chomp_comments()
     {
         let data = "  # a comment\n\n#one two three\n       #four!";
@@ -1641,51 +1778,6 @@ mod tests
         );
 
         assert_eq!(s.scan.stats, stats_of(data));
-    }
-
-    #[test]
-    fn key_simple_style_single()
-    {
-        use ScalarStyle::SingleQuote;
-
-        let data = "'key': ";
-        let mut s = ScanIter::new(data);
-
-        tokens!(s =>
-            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
-            | Token::BlockMappingStart                  => "expected start of block mapping",
-            | Token::Key                                => "expected an implicit key",
-            | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
-            | Token::Value                              => "expected a value token",
-            | Token::BlockEnd                           => "expected end of block mapping",
-            | Token::StreamEnd                          => "expected end of stream",
-            @ None                                      => "expected stream to be finished"
-        );
-    }
-
-    #[test]
-    fn key_many_style_single()
-    {
-        use ScalarStyle::SingleQuote;
-
-        let data = "'key1': 'value1'\n'key2': 'value2'";
-        let mut s = ScanIter::new(data);
-
-        tokens!(s =>
-            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
-            | Token::BlockMappingStart                  => "expected start of block mapping",
-            | Token::Key                                => "expected an implicit key",
-            | Token::Scalar(cow!("key1"), SingleQuote)  => "expected a flow scalar (single)",
-            | Token::Value                              => "expected a value token",
-            | Token::Scalar(cow!("value1"), SingleQuote)=> "expected a flow scalar (single)",
-            | Token::Key                                => "expected an implicit key",
-            | Token::Scalar(cow!("key2"), SingleQuote)  => "expected a flow scalar (single)",
-            | Token::Value                              => "expected a value token",
-            | Token::Scalar(cow!("value2"), SingleQuote)=> "expected a flow scalar (single)",
-            | Token::BlockEnd                           => "expected end of block mapping",
-            | Token::StreamEnd                          => "expected end of stream",
-            @ None                                      => "expected stream to be finished"
-        );
     }
 
     #[test]
