@@ -1653,6 +1653,7 @@ mod tests
             | Token::Key                                => "expected an implicit key",
             | Token::Scalar(cow!("key"), SingleQuote)   => "expected a flow scalar (single)",
             | Token::Value                              => "expected a value token",
+            | Token::BlockEnd                           => "expected end of block mapping",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
@@ -1677,6 +1678,7 @@ mod tests
             | Token::Scalar(cow!("key2"), SingleQuote)  => "expected a flow scalar (single)",
             | Token::Value                              => "expected a value token",
             | Token::Scalar(cow!("value2"), SingleQuote)=> "expected a flow scalar (single)",
+            | Token::BlockEnd                           => "expected end of block mapping",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
         );
@@ -1763,6 +1765,7 @@ mod tests
             | Token::Scalar(cow!("an alias"), SingleQuote),
             | Token::Value,
             | Token::Alias(cow!("ref")),
+            | Token::BlockEnd,
             | Token::DocumentEnd,
             | Token::StreamEnd,
             @ None
