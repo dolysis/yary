@@ -20,7 +20,7 @@ pub(in crate::scanner) struct Context
 
     // Block context fields
     indent:  usize,
-    indents: Vec<usize>,
+    indents: Vec<IndentEntry>,
     started: bool,
 }
 
@@ -87,6 +87,16 @@ impl Context
         }
     }
 
+    pub fn indents(&self) -> &[IndentEntry]
+    {
+        &self.indents
+    }
+
+    pub fn indents_mut(&mut self) -> &mut Vec<IndentEntry>
+    {
+        &mut self.indents
+    }
+
     /// Check if we are currently in the block context
     pub fn is_block(&self) -> bool
     {
@@ -99,13 +109,10 @@ impl Context
     /// .column > current_indent and .is_block returns true
     pub fn indent_increment(&mut self, column: usize) -> Result<Indent>
     {
-        if self.is_block() && self.indent() < column
-        {
-            self.started = true;
-            self.indents.push(self.indent);
+        self.started = true;
+        self.indents.push(IndentEntry::from(self.indent));
 
-            self.indent = column;
-        }
+        self.indent = column;
 
         Ok(self.indent.into())
     }
@@ -127,9 +134,9 @@ impl Context
             {
                 match self.indents.pop()
                 {
-                    Some(indent) =>
+                    Some(entry) =>
                     {
-                        self.indent = indent;
+                        self.indent = entry.indent;
 
                         f(self.indent)?;
                     },
@@ -139,6 +146,47 @@ impl Context
         }
 
         Ok(old - self.indents.len())
+    }
+}
+
+/// Stack entry for tracking indentation levels, and
+/// associated metadata
+#[derive(Debug, Clone, Copy)]
+pub(in crate::scanner) struct IndentEntry
+{
+    indent: usize,
+
+    /// Set if the associated indentation is a sequence, and
+    /// the scanner has produced a BlockSequenceStart
+    /// token for it
+    ///
+    /// This field is only used to track whether a token has
+    /// already been produced for a given list, in cases
+    /// where the list is zero indented
+    pub sequence_started: bool,
+}
+
+impl IndentEntry
+{
+    pub fn new(indent: usize) -> Self
+    {
+        Self {
+            indent,
+            sequence_started: false,
+        }
+    }
+
+    pub fn indent(&self) -> Indent
+    {
+        self.indent.into()
+    }
+}
+
+impl From<usize> for IndentEntry
+{
+    fn from(indent: usize) -> Self
+    {
+        Self::new(indent)
     }
 }
 

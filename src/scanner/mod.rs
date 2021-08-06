@@ -917,17 +917,51 @@ fn roll_indent<'de>(
     map: bool,
 ) -> Result<()>
 {
-    if context.is_block() && context.indent() < column
+    let token = match map
     {
-        context.indent_increment(column)?;
+        true => Token::BlockMappingStart,
+        false => Token::BlockSequenceStart,
+    };
 
-        let token = match map
+    if context.is_block()
+    {
+        // If the indent is greater, we don't need to worry about
+        // same level sequences
+        if context.indent() < column
         {
-            true => Token::BlockMappingStart,
-            false => Token::BlockSequenceStart,
-        };
+            context.indent_increment(column)?;
 
-        enqueue!(token, mark => tokens);
+            // If a sequence, set sequence_started flag
+            if !map
+            {
+                // Safety: indent_increment ensures we have >1 element
+                context.indents_mut().last_mut().unwrap().sequence_started = true;
+            }
+
+            enqueue!(token, mark => tokens);
+        }
+        // Otherwise we need to check if this is:
+        // 1. A sequence
+        // 2. At the same indentation level
+        // 3. Is the first element of this sequence
+        else if (!map) && context.indent() == column
+        {
+            let add_token = context
+                .indents()
+                .last()
+                .map(|entry| !entry.sequence_started)
+                .unwrap_or(false);
+
+            if add_token
+            {
+                context.indent_increment(column)?;
+
+                // Safety: indent_increment ensures we have >1 element
+                context.indents_mut().last_mut().unwrap().sequence_started = true;
+
+                enqueue!(token, mark => tokens);
+            }
+        }
     }
 
     Ok(())
@@ -1402,6 +1436,36 @@ mod tests
             | Token::Scalar(cow!("and"), SingleQuote)   => "expected a flow scalar",
             | Token::Value                              => "expected a value token",
             | Token::Scalar(cow!("again"), SingleQuote) => "expected a flow scalar",
+            | Token::BlockEnd                           => "expected end of nested mapping",
+            | Token::BlockEnd                           => "expected end of block mapping",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn block_collection_sequence_no_indent()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "
+'one':
+- 'two'
+- 'three'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("one"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value",
+            | Token::BlockSequenceStart                 => "expected start of block sequence",
+            | Token::BlockEntry                         => "expected a sequence entry",
+            | Token::Scalar(cow!("two"), SingleQuote)   => "expected a flow scalar",
+            | Token::BlockEntry                         => "expected a sequence entry",
+            | Token::Scalar(cow!("three"), SingleQuote) => "expected a flow scalar",
             | Token::BlockEnd                           => "expected end of nested mapping",
             | Token::BlockEnd                           => "expected end of block mapping",
             | Token::StreamEnd                          => "expected end of stream",
