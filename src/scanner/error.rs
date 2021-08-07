@@ -42,6 +42,9 @@ pub enum ScanError
     /// A block entry was not expected or allowed
     InvalidBlockEntry,
 
+    /// A mapping key was not expected or allowed
+    InvalidKey,
+
     /// A mapping value was not expected or allowed
     InvalidValue,
 
