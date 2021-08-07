@@ -1902,6 +1902,85 @@ mod tests
     }
 
     #[test]
+    fn explicit_key_simple()
+    {
+        let data = "
+? 'an explicit key'
+: 'a value'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                          => "expected start of stream",
+            | Token::BlockMappingStart                                          => "expected the start of a block mapping",
+            | Token::Key                                                        => "expected an explicit key",
+            | Token::Scalar(cow!("an explicit key"), ScalarStyle::SingleQuote)  => "expected a scalar",
+            | Token::Value                                                      => "expected a value",
+            | Token::Scalar(cow!("a value"), ScalarStyle::SingleQuote)          => "expected a scalar",
+            | Token::BlockEnd                                                   => "expected the end of a block mapping",
+            | Token::StreamEnd                                                  => "expected end of stream",
+            @ None                                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn explicit_key_mapping_missing_value()
+    {
+        // A value is implied by the explicit key, and can be
+        // omitted from the document, while still being
+        // valid YAML
+        let data = "? 'sub mapping key': 'sub mapping value'";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                          => "expected start of stream",
+            | Token::BlockMappingStart                                          => "expected the start of a block mapping",
+            | Token::Key                                                        => "expected an explicit key",
+            | Token::BlockMappingStart                                          => "expected the start of a block mapping",
+            | Token::Key                                                        => "expected an explicit key",
+            | Token::Scalar(cow!("sub mapping key"), ScalarStyle::SingleQuote)  => "expected a scalar",
+            | Token::Value                                                      => "expected a value",
+            | Token::Scalar(cow!("sub mapping value"), ScalarStyle::SingleQuote)=> "expected a scalar",
+            | Token::BlockEnd                                                   => "expected the end of a block mapping",
+            | Token::BlockEnd                                                   => "expected the end of a block mapping",
+            | Token::StreamEnd                                                  => "expected end of stream",
+            @ None                                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn explicit_key_mapping()
+    {
+        let data = "
+? 'key mapping': 'value'
+  'another': 'value'
+: 'bar'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                          => "expected start of stream",
+            | Token::BlockMappingStart                                          => "expected the start of a block mapping",
+            | Token::Key                                                        => "expected an explicit key",
+            | Token::BlockMappingStart                                          => "expected the start of a block mapping",
+            | Token::Key                                                        => "expected an explicit key",
+            | Token::Scalar(cow!("key mapping"), ScalarStyle::SingleQuote)      => "expected a scalar",
+            | Token::Value                                                      => "expected a value",
+            | Token::Scalar(cow!("value"), ScalarStyle::SingleQuote)            => "expected a scalar",
+            | Token::Key                                                        => "expected an explicit key",
+            | Token::Scalar(cow!("another"), ScalarStyle::SingleQuote)          => "expected a scalar",
+            | Token::Value                                                      => "expected a value",
+            | Token::Scalar(cow!("value"), ScalarStyle::SingleQuote)            => "expected a scalar",
+            | Token::BlockEnd                                                   => "expected the end of a block mapping",
+            | Token::Value                                                      => "expected a value",
+            | Token::Scalar(cow!("bar"), ScalarStyle::SingleQuote)              => "expected a scalar",
+            | Token::BlockEnd                                                   => "expected the end of a block mapping",
+            | Token::StreamEnd                                                  => "expected end of stream",
+            @ None                                                              => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn flow_scalar_single_simple()
     {
         use ScalarStyle::SingleQuote;
