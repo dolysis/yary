@@ -1,6 +1,9 @@
 use std::ops::Add;
 
-use crate::scanner::error::{ScanError, ScanResult as Result};
+use crate::{
+    scanner::error::{ScanError, ScanResult as Result},
+    token::Marker,
+};
 
 pub(in crate::scanner) const STARTING_INDENT: Indent = Indent(None);
 
@@ -107,10 +110,10 @@ impl Context
     /// flow context, returning the current level. Note
     /// that this function will only increment the indent if
     /// .column > current_indent and .is_block returns true
-    pub fn indent_increment(&mut self, column: usize) -> Result<Indent>
+    pub fn indent_increment(&mut self, column: usize, line: usize, map: bool) -> Result<Indent>
     {
         self.started = true;
-        self.indents.push(IndentEntry::from(self.indent));
+        self.indents.push(IndentEntry::new(self.indent, line, map));
 
         self.indent = column;
 
@@ -132,20 +135,32 @@ impl Context
         {
             while Indent(Some(self.indent)) > column
             {
-                match self.indents.pop()
+                if !self.pop_indent(&mut f)?
                 {
-                    Some(entry) =>
-                    {
-                        self.indent = entry.indent;
-
-                        f(self.indent)?;
-                    },
-                    None => break,
+                    break;
                 }
             }
         }
 
         Ok(old - self.indents.len())
+    }
+
+    pub fn pop_indent<F>(&mut self, mut f: F) -> Result<bool>
+    where
+        F: FnMut(usize) -> Result<()>,
+    {
+        match self.indents.pop()
+        {
+            Some(entry) =>
+            {
+                self.indent = entry.indent;
+
+                f(self.indent)?;
+
+                Ok(true)
+            },
+            None => Ok(false),
+        }
     }
 }
 
@@ -156,37 +171,42 @@ pub(in crate::scanner) struct IndentEntry
 {
     indent: usize,
 
-    /// Set if the associated indentation is a sequence, and
-    /// the scanner has produced a BlockSequenceStart
-    /// token for it
-    ///
-    /// This field is only used to track whether a token has
-    /// already been produced for a given list, in cases
-    /// where the list is zero indented
-    pub sequence_started: bool,
+    /// The type of indentation started, either
+    /// BlockSequenceStart or BlockMappingStart
+    pub kind: Marker,
+
+    /// Line the indentation was set on. Note that this may
+    /// be different from the original line _if_
+    /// .zero_indented is true, as it is used for record
+    /// keeping
+    pub line: usize,
+
+    /// Flag for checking if the associated indent for a
+    /// zero indented sequence
+    pub zero_indented: bool,
 }
 
 impl IndentEntry
 {
-    pub fn new(indent: usize) -> Self
+    pub fn new(indent: usize, line: usize, map: bool) -> Self
     {
+        let kind = match map
+        {
+            true => Marker::BlockMappingStart,
+            false => Marker::BlockSequenceStart,
+        };
+
         Self {
             indent,
-            sequence_started: false,
+            kind,
+            line,
+            zero_indented: false,
         }
     }
 
     pub fn indent(&self) -> Indent
     {
         self.indent.into()
-    }
-}
-
-impl From<usize> for IndentEntry
-{
-    fn from(indent: usize) -> Self
-    {
-        Self::new(indent)
     }
 }
 
