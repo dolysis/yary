@@ -143,7 +143,10 @@ impl Scanner
             },
 
             // Is it an explicit key?
-            // TODO
+            [EXPLICIT_KEY, ..] if self.context.is_flow() || isWhiteSpaceZ!(~base, 1) =>
+            {
+                self.explicit_key(base, tokens)
+            },
 
             // Is it a value?
             [VALUE, ..] if isWhiteSpaceZ!(~base, 1) || self.context.is_flow() =>
@@ -462,6 +465,69 @@ impl Scanner
         self.stats += stats;
 
         enqueue!(token, :self.stats => tokens);
+
+        Ok(())
+    }
+
+    fn explicit_key<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    {
+        let block_context = self.context.is_block();
+        /*
+         * If in the block context we may need to add indentation
+         * tokens to the stream, and we need an additional
+         * check that keys are currently legal.
+         *
+         * This can occur, for example if you have the following
+         * YAML:
+         *
+         *      !!str ? 'whoops, tag is': 'in the wrong place'
+         *      ^^^^^^^
+         *      Invalid token sequence
+         *
+         * As node decorators (tags, anchors, aliases) must be
+         * directly preceding the node
+         */
+        if block_context
+        {
+            // Ensure that keys are legal
+            if !self.simple_key_allowed
+            {
+                return Err(ScanError::InvalidKey);
+            }
+
+            // Increase the indentation level, and push a
+            // BlockMappingStart token to the queue, if
+            // required
+            roll_indent(
+                &mut self.context,
+                tokens,
+                self.stats.read,
+                self.stats.lines,
+                self.stats.column,
+                BLOCK_MAP,
+            )?;
+        }
+
+        // Remove any saved implicit key
+        self.remove_saved_key()?;
+
+        /* Another key may follow an explicit key in the block
+         * context, typically when this explicit key is a
+         * mapping node, and the mapping starts inline with the
+         * explicit key. E.g:
+         *
+         *      ? my key: value
+         *      : value
+         *
+         * is equivalent to
+         *
+         *      ? { my key: value }: value
+         */
+        self.simple_key_allowed = block_context;
+
+        advance!(*base, :self.stats, 1);
+
+        enqueue!(Token::Key, :self.stats => tokens);
 
         Ok(())
     }
@@ -1119,6 +1185,7 @@ const FLOW_SEQUENCE_START: u8 = b'[';
 const FLOW_SEQUENCE_END: u8 = b']';
 const FLOW_ENTRY: u8 = b',';
 const BLOCK_ENTRY: u8 = b'-';
+const EXPLICIT_KEY: u8 = b'?';
 
 const COMMENTS: bool = true;
 const REQUIRED: bool = true;
