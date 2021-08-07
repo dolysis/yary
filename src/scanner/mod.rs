@@ -27,7 +27,7 @@ use crate::{
         scalar::flow::scan_flow_scalar,
         tag::{scan_node_tag, scan_tag_directive},
     },
-    token::{StreamEncoding, Token},
+    token::{Marker, StreamEncoding, Token},
 };
 
 type Tokens<'de> = Queue<TokenEntry<'de>>;
@@ -101,6 +101,7 @@ impl Scanner
 
         self.expire_stale_saved_key()?;
 
+        self.pop_zero_indent_sequence(*base, tokens)?;
         self.unroll_indent(tokens, self.stats.column)?;
 
         if base.is_empty() || self.state == StreamState::Done
@@ -481,8 +482,9 @@ impl Scanner
                 // block mapping start token
                 roll_indent(
                     &mut self.context,
-                    key_stats.read,
                     tokens,
+                    key_stats.read,
+                    key_stats.lines,
                     key_stats.column,
                     BLOCK_MAP,
                 )?;
@@ -511,8 +513,9 @@ impl Scanner
                     // block mapping start token
                     roll_indent(
                         &mut self.context,
-                        self.stats.read,
                         tokens,
+                        self.stats.read,
+                        self.stats.lines,
                         self.stats.column,
                         BLOCK_MAP,
                     )?;
@@ -618,13 +621,25 @@ impl Scanner
         {
             true => roll_indent(
                 &mut self.context,
-                self.stats.read,
                 tokens,
+                self.stats.read,
+                self.stats.lines,
                 self.stats.column,
                 !BLOCK_MAP,
             ),
             false => Err(ScanError::InvalidBlockEntry),
         }?;
+
+        if self.context.indents().last().map_or(false, |entry| {
+            entry.indent() == self.stats.column && entry.line < self.stats.lines
+        })
+        {
+            let current = self.stats.lines;
+
+            self.context.indents_mut().last_mut().map(|entry| {
+                entry.line = current;
+            });
+        }
 
         // Reset saved key
         self.remove_saved_key()?;
@@ -676,6 +691,40 @@ impl Scanner
                 }
 
                 *saved.key_mut() = KeyPossible::No
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Manages the decrement of zero indented block
+    /// sequences
+    fn pop_zero_indent_sequence<'de>(
+        &mut self,
+        base: &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
+    {
+        if let Some(entry) = self.context.indents().last()
+        {
+            /*
+             * Pop an indentation level if, and only if:
+             * 1. Current line != entry's line
+             * 2. Current indentation is for a sequence
+             * 3. The next byte sequence is not a block entry
+             * 4. The entry was flagged zero_indented
+             */
+            if entry.line < self.stats.lines
+                && entry.zero_indented
+                && entry.kind == Marker::BlockSequenceStart
+                && (!check!(~base => b'-'))
+            {
+                let read = self.stats.read;
+
+                self.context.pop_indent(|_| {
+                    enqueue!(Token::BlockEnd, read => tokens);
+                    Ok(())
+                })?;
             }
         }
 
@@ -911,8 +960,9 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
 /// indent token to the indent stack if required
 fn roll_indent<'de>(
     context: &mut Context,
-    mark: usize,
     tokens: &mut Tokens<'de>,
+    mark: usize,
+    line: usize,
     column: usize,
     map: bool,
 ) -> Result<()>
@@ -929,14 +979,7 @@ fn roll_indent<'de>(
         // same level sequences
         if context.indent() < column
         {
-            context.indent_increment(column)?;
-
-            // If a sequence, set sequence_started flag
-            if !map
-            {
-                // Safety: indent_increment ensures we have >1 element
-                context.indents_mut().last_mut().unwrap().sequence_started = true;
-            }
+            context.indent_increment(column, line, map)?;
 
             enqueue!(token, mark => tokens);
         }
@@ -949,15 +992,13 @@ fn roll_indent<'de>(
             let add_token = context
                 .indents()
                 .last()
-                .map(|entry| !entry.sequence_started)
-                .unwrap_or(false);
+                .map_or(false, |entry| entry.kind == Marker::BlockMappingStart);
 
             if add_token
             {
-                context.indent_increment(column)?;
+                context.indent_increment(column, line, map)?;
 
-                // Safety: indent_increment ensures we have >1 element
-                context.indents_mut().last_mut().unwrap().sequence_started = true;
+                context.indents_mut().last_mut().unwrap().zero_indented = true;
 
                 enqueue!(token, mark => tokens);
             }
