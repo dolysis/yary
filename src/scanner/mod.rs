@@ -1379,7 +1379,8 @@ mod tests
         use ScalarStyle::SingleQuote;
         let data = "
 - - 'a'
-  - 'nested'
+  - 
+    'nested'
 - 'block'
 - 'sequence'
 ";
@@ -1508,6 +1509,57 @@ mod tests
             | Token::BlockEntry                         => "expected a sequence entry",
             | Token::Scalar(cow!("three"), SingleQuote) => "expected a flow scalar",
             | Token::BlockEnd                           => "expected end of nested mapping",
+            | Token::BlockEnd                           => "expected end of block mapping",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn block_collection_sequence_no_indent_nested()
+    {
+        use ScalarStyle::SingleQuote;
+
+        let data = "
+'one':
+  'two':
+  - 'three'
+  'four':
+  - 'five'
+'six':
+- 'seven'
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected start of block mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("one"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value",
+            | Token::BlockMappingStart                  => "expected start of nested mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("two"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value",
+            | Token::BlockSequenceStart                 => "expected start of zero indented sequence",
+            | Token::BlockEntry                         => "expected a sequence entry",
+            | Token::Scalar(cow!("three"), SingleQuote) => "expected a flow scalar",
+            | Token::BlockEnd                           => "expected end of zero indented sequence",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("four"), SingleQuote)  => "expected a flow scalar",
+            | Token::Value                              => "expected a value",
+            | Token::BlockSequenceStart                 => "expected start of zero indented sequence",
+            | Token::BlockEntry                         => "expected a sequence entry",
+            | Token::Scalar(cow!("five"), SingleQuote)  => "expected a flow scalar",
+            | Token::BlockEnd                           => "expected end of zero indented sequence",
+            | Token::BlockEnd                           => "expected end of nested mapping",
+            | Token::Key                                => "expected an implicit key",
+            | Token::Scalar(cow!("six"), SingleQuote)   => "expected a flow scalar",
+            | Token::Value                              => "expected a value",
+            | Token::BlockSequenceStart                 => "expected start of zero indented sequence",
+            | Token::BlockEntry                         => "expected a sequence entry",
+            | Token::Scalar(cow!("seven"), SingleQuote) => "expected a flow scalar",
+            | Token::BlockEnd                           => "expected end of zero indented sequence",
             | Token::BlockEnd                           => "expected end of block mapping",
             | Token::StreamEnd                          => "expected end of stream",
             @ None                                      => "expected stream to be finished"
