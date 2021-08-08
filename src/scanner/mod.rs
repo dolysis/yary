@@ -696,15 +696,22 @@ impl Scanner
             false => Err(ScanError::InvalidBlockEntry),
         }?;
 
-        if self.context.indents().last().map_or(false, |entry| {
+        // Check if the current block context is zero
+        // indented
+        let is_zero_indented = self.context.indents().last().map_or(false, |entry| {
             entry.indent() == self.stats.column && entry.line < self.stats.lines
-        })
+        });
+
+        // If it is, we need to update the line to the
+        // current, to disarm pop_zero_indent_sequence
+        if is_zero_indented
         {
             let current = self.stats.lines;
 
-            self.context.indents_mut().last_mut().map(|entry| {
+            if let Some(entry) = self.context.indents_mut().last_mut()
+            {
                 entry.line = current;
-            });
+            }
         }
 
         // Reset saved key
