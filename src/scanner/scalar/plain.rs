@@ -231,3 +231,314 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
 
 const SPACE: u8 = b' ';
 const NEWLINE: u8 = b'\n';
+
+#[cfg(test)]
+mod tests
+{
+    use anyhow::anyhow;
+    use pretty_assertions::assert_eq;
+    use ScalarStyle::Plain;
+
+    use super::*;
+
+    type TestResult = anyhow::Result<()>;
+
+    macro_rules! cxt {
+        (flow -> $level:expr) => {
+            {
+                let mut c = Context::new();
+
+                for _ in 0..$level {
+                    c.flow_increment().unwrap();
+                }
+
+                c
+            }
+        };
+        (block -> [ $($indent:expr),+ ]) => {
+            {
+                let mut c = Context::new();
+                $( cxt!(@blk &mut c, $indent) )+;
+
+                c
+            }
+        };
+        (@blk $cxt:expr, $indent:expr) => {
+            $cxt.indent_increment($indent, 0, true).unwrap()
+        }
+    }
+
+    #[test]
+    fn end_on_doc() -> TestResult
+    {
+        let tests = ["hello\n---\n", "hello\n... "];
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        for (i, &data) in tests.iter().enumerate()
+        {
+            let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)
+                .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
+
+            assert_eq!(token, expected, "on iteration {}", i);
+
+            assert_eq!(amt, 5, "on iteration {}", i);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn end_on_comment() -> TestResult
+    {
+        let tests = ["hello #", "hello\n#"];
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        for (i, &data) in tests.iter().enumerate()
+        {
+            let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)
+                .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
+
+            assert_eq!(token, expected, "on iteration {}", i);
+
+            assert_eq!(amt, 5, "on iteration {}", i);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn empty() -> TestResult
+    {
+        let data = "# a comment";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!(""), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 0);
+
+        Ok(())
+    }
+
+    /* === BLOCK CONTEXT === */
+
+    #[test]
+    fn block_simple() -> TestResult
+    {
+        let data = "hello";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, data.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn block_simple_key() -> TestResult
+    {
+        let data = "hello, world!: ";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("hello, world!"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 13);
+
+        Ok(())
+    }
+
+    #[test]
+    fn block_multi_line() -> TestResult
+    {
+        let data = "hello
+ this
+ is
+ a
+ multi-line
+ scalar
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("hello this is a multi-line scalar"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, data.trim_end().len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn block_multi_line_breaks() -> TestResult
+    {
+        let data = "this
+ is
+
+
+ a
+ scalar
+
+ with
+ line#breaks
+
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("this is\n\na scalar\nwith line#breaks"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, data.trim_end().len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn block_trailing_whitespace() -> TestResult
+    {
+        let data = "hello       ";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 5);
+
+        Ok(())
+    }
+
+    /* === FLOW CONTEXT === */
+
+    #[test]
+    fn flow_simple() -> TestResult
+    {
+        let data = "hello";
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, data.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_end_on_indicator() -> TestResult
+    {
+        let tests = ["hello: ", "hello,", "hello[", "hello]", "hello{", "hello}"];
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        for (i, &data) in tests.iter().enumerate()
+        {
+            let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)
+                .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
+
+            assert_eq!(token, expected, "on iteration {}", i);
+
+            assert_eq!(amt, 5, "on iteration {}", i);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_multi_line() -> TestResult
+    {
+        let data = "hello
+this
+is
+a
+multi-line
+string!";
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello this is a multi-line string!"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, data.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_multi_line_breaks() -> TestResult
+    {
+        let data = "hello
+        this
+
+big
+
+    string
+
+        has
+
+    line
+
+breaks
+        ";
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello this\nbig\nstring\nhas\nline\nbreaks"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 66);
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_trailing_whitespace() -> TestResult
+    {
+        let data = "hello
+
+        
+        
+        ";
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 5);
+
+        Ok(())
+    }
+}
