@@ -44,9 +44,7 @@ pub(in crate::scanner) fn scan_flow_scalar(
         // Even in a scalar context, YAML prohibits starting a line
         // with document stream tokens followed by a blank
         // character
-        if stats.column == 0
-            && check!(~buffer => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
-            && isWhiteSpaceZ!(~buffer, 3)
+        if isDocumentIndicator!(~buffer, :stats)
         {
             return Err(ScanError::InvalidFlowScalar);
         }
