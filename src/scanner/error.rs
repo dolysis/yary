@@ -39,6 +39,10 @@ pub enum ScanError
     /// A flow scalar was invalid for some reason
     InvalidFlowScalar,
 
+    /// A plain scalar contained a character sequence that
+    /// is not permitted
+    InvalidPlainScalar,
+
     /// A block entry was not expected or allowed
     InvalidBlockEntry,
 
