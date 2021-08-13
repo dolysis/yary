@@ -287,6 +287,35 @@ macro_rules! isWhiteSpaceZ {
     };
 }
 
+/// Check if a YAML document indicator ('---', '...') exists
+/// @.offset in the given .buffer.
+///
+/// You must provide the current .buffer .column (or .stats
+/// object)
+///
+/// Modifiers:
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants
+///     /1 .buffer, .column
+///     /2 .buffer, :.stats
+macro_rules! isDocumentIndicator {
+    (~ $buffer:expr, :$stats:expr) => {
+        isDocumentIndicator!($buffer.as_bytes(), $stats.column)
+    };
+    ($buffer:expr, :$stats:expr) => {
+        isDocumentIndicator!($buffer, $stats.column)
+    };
+    (~ $buffer:expr, $column:expr) => {
+        isDocumentIndicator!($buffer.as_bytes(), $column)
+    };
+    ($buffer:expr, $column:expr) => {
+        $column == 0
+            && check!($buffer => [b'-', b'-', b'-', ..] | [b'.', b'.', b'.', ..])
+            && isWhiteSpaceZ!($buffer, 3)
+    };
+}
+
 /// Checks if byte (@ .offset) in .buffer is hexadecimal
 ///
 /// Modifiers:
