@@ -896,9 +896,9 @@ impl Scanner
             | [b'@', ..]
             | [b'`', ..] => false,
             [VALUE, ..] | [EXPLICIT_KEY, ..] | [BLOCK_ENTRY, ..]
-                if is_plain_safe_c(base, 1, self.context.is_block()) =>
+                if !is_plain_safe_c(base, 1, self.context.is_block()) =>
             {
-                true
+                false
             },
             _ => true,
         }
