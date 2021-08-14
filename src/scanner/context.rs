@@ -247,6 +247,18 @@ impl PartialEq<usize> for Indent
     }
 }
 
+impl PartialEq<Indent> for usize
+{
+    fn eq(&self, other: &Indent) -> bool
+    {
+        match other.0
+        {
+            Some(indent) => *self == indent,
+            None => false,
+        }
+    }
+}
+
 impl PartialOrd<usize> for Indent
 {
     fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering>
@@ -255,6 +267,18 @@ impl PartialOrd<usize> for Indent
         {
             Some(indent) => indent.partial_cmp(other),
             None => Some(std::cmp::Ordering::Less),
+        }
+    }
+}
+
+impl PartialOrd<Indent> for usize
+{
+    fn partial_cmp(&self, other: &Indent) -> Option<std::cmp::Ordering>
+    {
+        match other.0
+        {
+            Some(ref indent) => self.partial_cmp(indent),
+            None => Some(std::cmp::Ordering::Greater),
         }
     }
 }

@@ -24,6 +24,7 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
 {
     let mut buffer = base;
     let mut scratch = Vec::new();
+    let indent = cxt.indent() + 1;
 
     // Local copies of the given stats
     let mut local_stats = stats.clone();
@@ -154,7 +155,7 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
 
         // If the whitespace ended at a lower indent, then we're
         // done, and should exit on the next loop
-        outdent = block_context && cxt.indent() > stats.column;
+        outdent = block_context && local_stats.column < indent;
 
         // Handle line joins as needed
         match lines
