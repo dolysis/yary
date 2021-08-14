@@ -1425,6 +1425,56 @@ mod tests
     }
 
     #[test]
+    fn flow_collection_sequence_plain()
+    {
+        use ScalarStyle::Plain;
+        let data = "[a key: a value,another key: another value]";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)      => "expected start of stream",
+            | Token::FlowSequenceStart                      => "expected a flow sequence start '['",
+            | Token::Key                                    => "expected a key",
+            | Token::Scalar(cow!("a key"), Plain)           => "expected a scalar key: 'a key'",
+            | Token::Value                                  => "expected a value",
+            | Token::Scalar(cow!("a value"), Plain)         => "expected a scalar value: 'a value'",
+            | Token::FlowEntry                              => "expected a flow entry: ','",
+            | Token::Key                                    => "expected a key",
+            | Token::Scalar(cow!("another key"), Plain)     => "expected a scalar key: 'another key'",
+            | Token::Value                                  => "expected a value",
+            | Token::Scalar(cow!("another value"), Plain)   => "expected a scalar value: 'another value'",
+            | Token::FlowSequenceEnd                        => "expected a flow sequence end ']'",
+            | Token::StreamEnd                              => "expected end of stream",
+            @ None                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
+    fn flow_collection_sequence_plain_abnormal()
+    {
+        use ScalarStyle::Plain;
+        let data = "[-: -123,not# a comment  :  (-%!&*@`|>+-)]";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)      => "expected start of stream",
+            | Token::FlowSequenceStart                      => "expected a flow sequence start '['",
+            | Token::Key                                    => "expected a key",
+            | Token::Scalar(cow!("-"), Plain)               => "expected a scalar key: '-'",
+            | Token::Value                                  => "expected a value",
+            | Token::Scalar(cow!("-123"), Plain)            => "expected a scalar value: '-123'",
+            | Token::FlowEntry                              => "expected a flow entry: ','",
+            | Token::Key                                    => "expected a key",
+            | Token::Scalar(cow!("not# a comment"), Plain)  => "expected a scalar key: 'not# a comment'",
+            | Token::Value                                  => "expected a value",
+            | Token::Scalar(cow!("(-%!&*@`|>+-)"), Plain)   => "expected a scalar value: '(-%!&*@`|>+-)'",
+            | Token::FlowSequenceEnd                        => "expected a flow sequence end ']'",
+            | Token::StreamEnd                              => "expected end of stream",
+            @ None                                          => "expected stream to be finished"
+        );
+    }
+
+    #[test]
     fn flow_collection_nested()
     {
         use ScalarStyle::SingleQuote;
@@ -1645,6 +1695,8 @@ mod tests
         let data = "
 'one':
 - 'two'
+
+
 - 'three'
 ";
         let mut s = ScanIter::new(data);
@@ -2063,6 +2115,24 @@ mod tests
             | Token::StreamEnd                                                  => "expected end of stream",
             @ None                                                              => "expected stream to be finished"
         );
+    }
+
+    #[test]
+    fn plain_scalar_simple()
+    {
+        use ScalarStyle::Plain;
+
+        let data = "hello from a plain scalar!";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                  => "expected start of stream",
+            | Token::Scalar(cow!("hello from a plain scalar!"), Plain)  => "expected a flow scalar (single)",
+            | Token::StreamEnd                                          => "expected end of stream",
+            @ None                                                      => "expected stream to be finished"
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
     }
 
     #[test]
