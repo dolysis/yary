@@ -2360,6 +2360,94 @@ mod tests
     }
 
     #[test]
+    fn complex_plain()
+    {
+        use ScalarStyle::Plain;
+
+        let data = r##"
+
+---
+- [
+    key: value,
+        indented: value,
+        {an object: inside a sequence},
+        [sequence inception!]
+]
+-   lets do it: &val as block,
+    can we :
+        build it:
+            higher?: *val
+    yes: we
+    can: baby
+
+                    "##;
+
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8),
+            | Token::DocumentStart,
+            | Token::BlockSequenceStart,
+            | Token::BlockEntry,
+            | Token::FlowSequenceStart,
+            | Token::Key,
+            | Token::Scalar(cow!("key"), Plain),
+            | Token::Value,
+            | Token::Scalar(cow!("value"), Plain),
+            | Token::FlowEntry,
+            | Token::Key,
+            | Token::Scalar(cow!("indented"), Plain),
+            | Token::Value,
+            | Token::Scalar(cow!("value"), Plain),
+            | Token::FlowEntry,
+            | Token::FlowMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("an object"), Plain),
+            | Token::Value,
+            | Token::Scalar(cow!("inside a sequence"), Plain),
+            | Token::FlowMappingEnd,
+            | Token::FlowEntry,
+            | Token::FlowSequenceStart,
+            | Token::Scalar(cow!("sequence inception!"), Plain),
+            | Token::FlowSequenceEnd,
+            | Token::FlowSequenceEnd,
+            | Token::BlockEntry,
+            | Token::BlockMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("lets do it"), Plain),
+            | Token::Value,
+            | Token::Anchor(cow!("val")),
+            | Token::Scalar(cow!("as block,"), Plain),
+            | Token::Key,
+            | Token::Scalar(cow!("can we"), Plain),
+            | Token::Value,
+            | Token::BlockMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("build it"), Plain),
+            | Token::Value,
+            | Token::BlockMappingStart,
+            | Token::Key,
+            | Token::Scalar(cow!("higher?"), Plain),
+            | Token::Value,
+            | Token::Alias(cow!("val")),
+            | Token::BlockEnd,
+            | Token::BlockEnd,
+            | Token::Key,
+            | Token::Scalar(cow!("yes"), Plain),
+            | Token::Value,
+            | Token::Scalar(cow!("we"), Plain),
+            | Token::Key,
+            | Token::Scalar(cow!("can"), Plain),
+            | Token::Value,
+            | Token::Scalar(cow!("baby"), Plain),
+            | Token::BlockEnd,
+            | Token::BlockEnd,
+            | Token::StreamEnd,
+            @ None
+        );
+    }
+
+    #[test]
     fn stale_required_key_oversized()
     {
         use ScalarStyle::SingleQuote;
