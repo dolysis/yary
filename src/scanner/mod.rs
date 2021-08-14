@@ -19,6 +19,7 @@ use self::{
     entry::TokenEntry,
     error::{ScanError, ScanResult as Result},
     key::{Key, KeyPossible},
+    scalar::plain::scan_plain_scalar,
 };
 use crate::{
     queue::Queue,
@@ -167,7 +168,7 @@ impl Scanner
             [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
 
             // Is it a plain scalar?
-            // TODO
+            _ if self.is_plain_scalar(*base) => self.plain_scalar(base, tokens),
 
             // Otherwise its an error
             // TODO
@@ -463,6 +464,28 @@ impl Scanner
 
         advance!(*base, amt);
         self.stats += stats;
+
+        enqueue!(token, :self.stats => tokens);
+
+        Ok(())
+    }
+
+    fn plain_scalar<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    {
+        let buffer = *base;
+        let mut stats = self.stats.clone();
+
+        self.save_key(!REQUIRED)?;
+
+        let (token, amt) = scan_plain_scalar(buffer, &mut stats, &self.context)?;
+
+        // A simple key cannot follow a plain scalar, there must be
+        // an indicator or new line before a key is valid
+        // again.
+        self.simple_key_allowed = false;
+
+        advance!(*base, amt);
+        self.stats = stats;
 
         enqueue!(token, :self.stats => tokens);
 
@@ -835,6 +858,51 @@ impl Scanner
 
         Ok(())
     }
+
+    /// Checks if .base starts with a character that could
+    /// be a plain scalar
+    fn is_plain_scalar(&self, base: &str) -> bool
+    {
+        if isWhiteSpaceZ!(~base)
+        {
+            return false;
+        }
+
+        /*
+         * Per the YAML spec, a plain scalar cannot start with
+         * any YAML indicators, excluding ':' '?' '-' in
+         * certain circumstances.
+         *
+         * See:
+         *      YAML 1.2: Section 7.3.3
+         *      yaml.org/spec/1.2/spec.html#ns-plain-first(c)
+         */
+        match base.as_bytes()
+        {
+            [DIRECTIVE, ..]
+            | [ANCHOR, ..]
+            | [ALIAS, ..]
+            | [TAG, ..]
+            | [SINGLE, ..]
+            | [DOUBLE, ..]
+            | [FLOW_MAPPING_START, ..]
+            | [FLOW_SEQUENCE_START, ..]
+            | [FLOW_MAPPING_END, ..]
+            | [FLOW_SEQUENCE_END]
+            | [FLOW_ENTRY, ..]
+            | [b'|', ..]
+            | [b'<', ..]
+            | [b'#', ..]
+            | [b'@', ..]
+            | [b'`', ..] => false,
+            [VALUE, ..] | [EXPLICIT_KEY, ..] | [BLOCK_ENTRY, ..]
+                if is_plain_safe_c(base, 1, self.context.is_block()) =>
+            {
+                true
+            },
+            _ => true,
+        }
+    }
 }
 
 struct ScanIter<'de>
@@ -1106,6 +1174,16 @@ where
     }
 
     Ok(())
+}
+
+/// Checks if the character at .offset is "safe" to start a
+/// plain scalar with, as defined in
+///
+/// yaml.org/spec/1.2/spec.html#ns-plain-safe(c)
+fn is_plain_safe_c(base: &str, offset: usize, block_context: bool) -> bool
+{
+    block_context
+        || ((!block_context) && (!check!(~base, offset => b',' | b'[' | b']' | b'{' | b'}')))
 }
 
 /// Vessel for tracking various stats about the underlying
