@@ -87,6 +87,17 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
             break 'scalar;
         }
 
+        // Check for character sequences which end a plain scalar,
+        // namely:
+        //
+        // ': '                         -> anywhere
+        // ',' | '[' | ']' | '{' | '}'  -> flow context
+        if (check!(~buffer => b':') && isWhiteSpaceZ!(~buffer, 1))
+            || flow_context && flow_indicator(buffer, 0)
+        {
+            break 'scalar;
+        }
+
         // Reset whitespace counters for next char / whitespace
         // sequence. We do this here after all possible terminations
         // that could leave trailing whitespace, so we can
@@ -98,20 +109,10 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
         // Handle non whitespace characters
         while !isWhiteSpaceZ!(~buffer)
         {
-            // Check for character sequences which end a plain scalar,
-            // namely:
-            //
-            // ': '                         -> anywhere
-            // ',' | '[' | ']' | '{' | '}'  -> flow context
             if (check!(~buffer => b':') && isWhiteSpaceZ!(~buffer, 1))
                 || flow_context && flow_indicator(buffer, 0)
             {
-                // Save the position of the last known non whitespace
-                // character, so we can truncate when trimming trailing
-                // whitespace
-                scalar_stats = local_stats.clone();
-
-                break 'scalar;
+                break;
             }
 
             if !can_borrow
@@ -522,7 +523,41 @@ breaks
     }
 
     #[test]
+    fn flow_trailing_whitespace_key() -> TestResult
+    {
+        let data = "hello   : ";
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 5);
+
+        Ok(())
+    }
+
+    #[test]
     fn flow_trailing_whitespace() -> TestResult
+    {
+        let data = "hello   ";
+        let mut stats = MStats::new();
+        let cxt = cxt!(flow -> 1);
+        let expected = Token::Scalar(cow!("hello"), Plain);
+
+        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+
+        assert_eq!(token, expected);
+
+        assert_eq!(amt, 5);
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_trailing_breaks() -> TestResult
     {
         let data = "hello
 
