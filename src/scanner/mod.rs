@@ -1182,8 +1182,10 @@ where
 /// yaml.org/spec/1.2/spec.html#ns-plain-safe(c)
 fn is_plain_safe_c(base: &str, offset: usize, block_context: bool) -> bool
 {
-    block_context
-        || ((!block_context) && (!check!(~base, offset => b',' | b'[' | b']' | b'{' | b'}')))
+    let flow_context = !block_context;
+    let not_flow_indicator = !check!(~base, offset => b',' | b'[' | b']' | b'{' | b'}');
+
+    block_context || (flow_context && not_flow_indicator)
 }
 
 /// Vessel for tracking various stats about the underlying

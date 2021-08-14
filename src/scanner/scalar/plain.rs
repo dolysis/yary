@@ -167,8 +167,8 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
             1 =>
             {
                 // Note that we reset whitespace to zero here, so that the
-                // post loop truncate doesn't
-                // remove characters we've already removed here
+                // post loop truncate doesn't remove characters we've
+                // already removed here
                 scratch.truncate(scratch.len() - whitespace);
                 whitespace = 0;
 
@@ -182,7 +182,7 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
                 // scratch space.
                 scratch.truncate(scratch.len() - whitespace);
                 whitespace = 0;
-                lines = lines - 1;
+                lines -= 1;
 
                 // Safety: we can only reach this branch if lines > 1
                 for _ in 0..lines
