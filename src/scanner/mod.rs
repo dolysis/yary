@@ -2138,6 +2138,33 @@ mod tests
     }
 
     #[test]
+    fn plain_scalar_starting_indicator()
+    {
+        use ScalarStyle::Plain;
+
+        let data = "-a key-: ?value\n:: :value";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)  => "expected start of stream",
+            | Token::BlockMappingStart                  => "expected the start of a block mapping",
+            | Token::Key                                => "expected an explicit key",
+            | Token::Scalar(cow!("-a key-"), Plain)     => "expected a plain scalar",
+            | Token::Value                              => "expected a value",
+            | Token::Scalar(cow!("?value"), Plain)      => "expected a plain scalar",
+            | Token::Key                                => "expected an explicit key",
+            | Token::Scalar(cow!(":"), Plain)           => "expected a plain scalar",
+            | Token::Value                              => "expected a value",
+            | Token::Scalar(cow!(":value"), Plain)      => "expected a plain scalar",
+            | Token::BlockEnd                           => "expected the end of a block mapping",
+            | Token::StreamEnd                          => "expected end of stream",
+            @ None                                      => "expected stream to be finished"
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
+    }
+
+    #[test]
     fn flow_scalar_single_simple()
     {
         use ScalarStyle::SingleQuote;
