@@ -1,0 +1,45 @@
+# Plain scalar indentation
+
+These are notes from my thought process while fixing errors
+in the way indentation was detected during plain scalar parsing.
+
+
+## Notes
+
+~~~
+a key: value
+:: :value
+^--indent:0
+^
+column:0
+~~~
+
+column = 0
+indent = 0 + 1
+
+column < indent? --> yes
+
+
+~~~
+hello:
+  - world
+ ^  ^--column:5
+ indent:2
+~~~
+
+column = 5
+indent = 2 + 1
+
+column < indent? --> no
+
+~~~
+a key:
+  key: value
+ ^^--column:3
+ indent:2
+~~~
+
+column = 3
+indent = 2 + 1
+
+column < indent? --> no
