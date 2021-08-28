@@ -218,6 +218,34 @@ macro_rules! isBreak {
     };
 }
 
+/// Check if the byte (@ .offset) is a line break or if the
+/// buffer is empty
+///
+/// Modifiers
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
+///     /3 .buffer, else .error
+///             := /4 .buffer, 0, else .error
+///     /4 .buffer, .offset, else .error
+macro_rules! isBreakZ {
+    (~ $buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isBreakZ!($buffer.as_bytes() $(, $offset )? $(, else $error)?)
+    };
+    ($buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isBreakZ!(@priv $buffer $(, $offset)? $(, else $error)? )
+    };
+    (@priv $buffer:expr $(, $offset:expr )? ) => {
+        isBreak!($buffer $(, $offset)? ) || check!($buffer => [])
+    };
+    (@priv $buffer:expr $(, $offset:expr )? , else $error:expr ) => {
+        isBreak!($buffer $(, $offset)?, else $error)
+            .or_else(|_| check!($buffer $(, $offset)? => [], else $error))
+    };
+}
+
 /// Check if the byte (@ .offset) is a space or tab
 ///
 /// Modifiers:
@@ -277,13 +305,21 @@ macro_rules! isWhiteSpace {
 ///     /1 .buffer := /2 .buffer, 0
 ///     /2 .buffer, .offset
 macro_rules! isWhiteSpaceZ {
-    (~ $buffer:expr $(, $offset:expr )? ) => {
-        isWhiteSpaceZ!($buffer.as_bytes() $(, $offset )? )
+    (~ $buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isWhiteSpaceZ!($buffer.as_bytes() $(, $offset )? $(, else $error)? )
     };
-    ($buffer:expr $(, $offset:expr )? ) => {
+    ($buffer:expr $(, $offset:expr )? $(, else $error:expr )? ) => {
+        isWhiteSpaceZ!(@priv $buffer $(, $offset )? $(, else $error)? )
+    };
+    (@priv $buffer:expr $(, $offset:expr )? ) => {
         isBlank!($buffer $(, $offset)?)
             || isBreak!($buffer $(, $offset)?)
             || check!($buffer $(, $offset)? => [])
+    };
+    (@priv $buffer:expr $(, $offset:expr )?, else $error:expr ) => {
+        isBlank!($buffer $(, $offset)? , else $error)
+            .or_else(|_| isBreak!($buffer $(, $offset)? , else $error))
+            .or_else(|_| check!($buffer $(, $offset)? => [] , else $error))
     };
 }
 
