@@ -43,8 +43,16 @@ pub enum ScanError
     /// is not permitted
     InvalidPlainScalar,
 
+    /// A block scalar contained a character sequence that
+    /// is not permitted
+    InvalidBlockScalar,
+
     /// A block entry was not expected or allowed
     InvalidBlockEntry,
+
+    /// A tab character '\t' was found in an invalid
+    /// context, typically block indentation
+    InvalidTab,
 
     /// A mapping key was not expected or allowed
     InvalidKey,
