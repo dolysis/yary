@@ -289,26 +289,6 @@ fn scan_headers(buffer: &mut &str, stats: &mut MStats) -> Result<(ChompStyle, In
     Ok((chomp, indent))
 }
 
-/// Skip any blanks (and .comments) until we reach a line
-/// ending or non blank character
-fn skip_blanks(buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<()>
-{
-    while isBlank!(~buffer)
-    {
-        advance!(*buffer, :stats, 1);
-    }
-
-    if comments && check!(~buffer => b'#')
-    {
-        while !isWhiteSpaceZ!(~buffer)
-        {
-            advance!(*buffer, :stats, 1);
-        }
-    }
-
-    Ok(())
-}
-
 /// Chomp the indentation spaces of a block scalar
 fn scan_indent(
     buffer: &mut &str,
@@ -344,63 +324,6 @@ fn scan_indent(
     }
 
     Ok(true)
-}
-
-/// Auto-detect the indentation level from the first non
-/// header line of a block scalar
-fn detect_indent_level(
-    buffer: &mut &str,
-    stats: &mut MStats,
-    cxt: &Context,
-    lines: &mut usize,
-    can_borrow: &mut bool,
-) -> Result<usize>
-{
-    let mut indent = 0;
-
-    loop
-    {
-        // Chomp indentation spaces, erroring on a tab
-        while isBlank!(~buffer)
-        {
-            if check!(~buffer => b'\t')
-            {
-                return Err(ScanError::InvalidTab);
-            }
-
-            if *can_borrow && *lines > 0
-            {
-                *can_borrow = false
-            }
-
-            advance!(*buffer, :stats, 1);
-        }
-
-        // Update detected indentation if required
-        if stats.column > indent
-        {
-            indent = stats.column;
-        }
-
-        // If its not a line break we're done, exit the loop
-        if !isBreak!(~buffer)
-        {
-            break;
-        }
-
-        // Otherwise eat the line and repeat
-        advance!(*buffer, :stats, @line);
-        *lines += 1;
-    }
-
-    // Note that we must set the lower bound of the indentation
-    // level, in case the YAML is invalid
-    if indent < cxt.indent() + 1
-    {
-        indent = cxt.indent() + 1
-    }
-
-    Ok(indent)
 }
 
 /// Process a block scalar's ending whitespace according to
@@ -505,6 +428,83 @@ fn scan_chomp<'de>(
     }
 
     Ok(scalar)
+}
+
+/// Auto-detect the indentation level from the first non
+/// header line of a block scalar
+fn detect_indent_level(
+    buffer: &mut &str,
+    stats: &mut MStats,
+    cxt: &Context,
+    lines: &mut usize,
+    can_borrow: &mut bool,
+) -> Result<usize>
+{
+    let mut indent = 0;
+
+    loop
+    {
+        // Chomp indentation spaces, erroring on a tab
+        while isBlank!(~buffer)
+        {
+            if check!(~buffer => b'\t')
+            {
+                return Err(ScanError::InvalidTab);
+            }
+
+            if *can_borrow && *lines > 0
+            {
+                *can_borrow = false
+            }
+
+            advance!(*buffer, :stats, 1);
+        }
+
+        // Update detected indentation if required
+        if stats.column > indent
+        {
+            indent = stats.column;
+        }
+
+        // If its not a line break we're done, exit the loop
+        if !isBreak!(~buffer)
+        {
+            break;
+        }
+
+        // Otherwise eat the line and repeat
+        advance!(*buffer, :stats, @line);
+        *lines += 1;
+    }
+
+    // Note that we must set the lower bound of the indentation
+    // level, in case the YAML is invalid
+    if indent < cxt.indent() + 1
+    {
+        indent = cxt.indent() + 1
+    }
+
+    Ok(indent)
+}
+
+/// Skip any blanks (and .comments) until we reach a line
+/// ending or non blank character
+fn skip_blanks(buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<()>
+{
+    while isBlank!(~buffer)
+    {
+        advance!(*buffer, :stats, 1);
+    }
+
+    if comments && check!(~buffer => b'#')
+    {
+        while !isWhiteSpaceZ!(~buffer)
+        {
+            advance!(*buffer, :stats, 1);
+        }
+    }
+
+    Ok(())
 }
 
 /// The type of chomping associated with a block scalar
