@@ -1,3 +1,23 @@
+//! This module contains the functions responsible for
+//! scanning block scalars into Tokens.
+//!
+//! It exports a single function, scan_block_scalar which
+//! provides the top level interface of this functionality.
+//!
+//! Two further functions are notable: scan_indent and
+//! scan_chomp.
+//!
+//! scan_indent handles the scanning of scalar indentation,
+//! and will typically be called once per line in a block
+//! scalar. It is also indirectly responsible for
+//! terminating the main loop which relies on the local
+//! indent level that scan_indent sets.
+//!
+//! scan_chomp finishes the scalar scanning, and is
+//! responsible for ensuring the correct amount of
+//! trailing whitespace is added to the scalar based on its
+//! chomp header -- the '|' or '>'.
+
 use std::num::NonZeroU8;
 
 use atoi::atoi;
@@ -11,6 +31,14 @@ use crate::{
     token::{ScalarStyle, Slice, Token},
 };
 
+/// Scans a block scalar, returning a Token and the amount
+/// read from .base. This function will attempt to borrow
+/// from .base, however the circumstances in which it
+/// remains possible to borrow are narrow.
+///
+/// See:
+///     YAML 1.2: Section 8.1
+///     yaml.org/spec/1.2/#c-b-block-header(m,t)
 pub(in crate::scanner) fn scan_block_scalar<'de>(
     base: &'de str,
     stats: &mut MStats,
@@ -18,15 +46,31 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
     fold: bool,
 ) -> Result<(Token<'de>, usize)>
 {
+    // Initialize the local state handlers
     let mut buffer = base;
     let mut scratch = Vec::new();
     let mut local_stats = stats.clone();
+
+    // Tracks if a borrow is possible from the underlying .base
     let mut can_borrow = true;
+
+    // Tracks the start and end of the scalar content. Note that
+    // these track two different values depending on whether
+    // we .can_borrow. If we can, acts as start/end indexes
+    // into .base, otherwise as start/end indexes into
+    // .scratch. These can be difficult to keep track of; so
+    // pay attention to the context before setting them.
     let mut content_start: usize = 0;
     let mut content_end: usize = 0;
-    let mut lines = 0;
+
+    // Keeps track of the outstanding lines that need to be
+    // reconciled
+    let mut lines: usize = 0;
+
+    // The indentation level of this scalar
     let indent: usize;
 
+    // Scalar style mapping
     let style = match fold
     {
         true => ScalarStyle::Folded,
@@ -181,7 +225,7 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
         }
 
         // Chomp indentation until the next indented line
-        chomp_indent(
+        scan_indent(
             &mut buffer,
             &mut local_stats,
             &mut lines,
@@ -208,6 +252,10 @@ fn scan_headers(buffer: &mut &str, stats: &mut MStats) -> Result<(ChompStyle, In
     let mut indent = None;
     let mut chomp = ChompStyle::Clip;
 
+    // Set the explicit indent if it exists.
+    //
+    // Note that we silently eat an invalid indent (0) rather
+    // than erroring
     match buffer.as_bytes()
     {
         [i @ b'0'..=b'9', ..] | [_, i @ b'0'..=b'9', ..] =>
@@ -219,6 +267,7 @@ fn scan_headers(buffer: &mut &str, stats: &mut MStats) -> Result<(ChompStyle, In
         {},
     }
 
+    // Set the chomping behavior of the scalar, if required
     match buffer.as_bytes()
     {
         [c, ..] | [_, c, ..] if matches!(*c, b'+') =>
@@ -261,7 +310,7 @@ fn skip_blanks(buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<
 }
 
 /// Chomp the indentation spaces of a block scalar
-fn chomp_indent(
+fn scan_indent(
     buffer: &mut &str,
     stats: &mut MStats,
     lines: &mut usize,
@@ -357,8 +406,7 @@ fn detect_indent_level(
 /// Process a block scalar's ending whitespace according to
 /// the YAML Spec section 8.1.1.2.
 ///
-/// See the following link for further details.
-///
+/// See:
 ///     yaml.org/spec/1.2/#c-chomping-indicator(t)
 fn scan_chomp<'de>(
     base: &'de str,
@@ -395,14 +443,14 @@ fn scan_chomp<'de>(
             ChompStyle::Strip => scalar = cow!(&base[start..end]),
             // We only maintain the borrow if there is 0 or 1 new lines
             //
-            // Technically, we could extend the logic here to check if the most recent chomp_indent
+            // Technically, we could extend the logic here to check if the most recent scan_indent
             // didn't skip any spaces (only line breaks).
             ChompStyle::Keep => match lines
             {
                 n @ 0 | n @ 1 => scalar = cow!(&base[start..end + n]),
                 // The only way to hit this branch is if the scalar could still be borrowed, and
                 // thus is a single line. In this case we have to copy the borrow to the scratch
-                // space, and append any trailing lines the previous chomp_indent produced.
+                // space, and append any trailing lines the previous scan_indent produced.
                 //
                 // Note that .start and .end in this case refer to .base offsets _AND NOT_ scratch
                 // offsets. Care must be taken to ensure we _NEVER_ index into scratch with them
@@ -440,7 +488,10 @@ fn scan_chomp<'de>(
 
                 scratch.truncate(end);
             },
+            // Return the content as is, no trailing whitespace
             ChompStyle::Strip => scratch.truncate(end),
+            // Append any trailing line breaks that weren't caught in the main loop of
+            // scan_block_scalar
             ChompStyle::Keep =>
             {
                 for _ in 0..lines
@@ -487,6 +538,8 @@ impl Default for ChompStyle
     }
 }
 
+/// Packager for transporting args into scan_chomp without
+/// triggering clippy
 #[derive(Debug)]
 struct ChompParams
 {
