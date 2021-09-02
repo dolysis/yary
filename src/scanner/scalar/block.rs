@@ -516,3 +516,371 @@ type IndentHeader = Option<NonZeroU8>;
 const COMMENTS: bool = true;
 const SPACE: u8 = b' ';
 const NEWLINE: u8 = b'\n';
+
+#[cfg(test)]
+mod tests
+{
+    use pretty_assertions::assert_eq;
+    use ScalarStyle::{Folded, Literal};
+
+    use super::*;
+
+    type TestResult = anyhow::Result<()>;
+
+    macro_rules! cxt {
+        (flow -> $level:expr) => {
+            {
+                let mut c = Context::new();
+
+                for _ in 0..$level {
+                    c.flow_increment().unwrap();
+                }
+
+                c
+            }
+        };
+        (block -> [ $($indent:expr),+ ]) => {
+            {
+                let mut c = Context::new();
+                $( cxt!(@blk &mut c, $indent) )+;
+
+                c
+            }
+        };
+        (@blk $cxt:expr, $indent:expr) => {
+            $cxt.indent_increment($indent, 0, true).unwrap()
+        }
+    }
+
+    /* === LITERAL STYLE === */
+
+    #[test]
+    fn literal_simple() -> TestResult
+    {
+        let data = "|\n  this is a simple block scalar";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("this is a simple block scalar"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_clip() -> TestResult
+    {
+        let data = "|\n  trailing lines...\n \n\n";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("trailing lines...\n"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_strip() -> TestResult
+    {
+        let data = "|-\n  trailing lines...\n \n\n";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("trailing lines..."), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_keep() -> TestResult
+    {
+        let data = "|+\n  trailing lines...\n \n\n";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("trailing lines...\n\n\n"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_line_folding() -> TestResult
+    {
+        let data = "|
+  some folded
+  lines
+  here
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("some folded\nlines\nhere\n"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_preceding_breaks() -> TestResult
+    {
+        let data = "|-
+
+
+  some folded
+  lines
+  here
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("\n\nsome folded\nlines\nhere"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_trailing_breaks() -> TestResult
+    {
+        let data = "|+
+  some folded
+  lines
+  here
+
+
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("some folded\nlines\nhere\n\n\n"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_trailing_chars() -> TestResult
+    {
+        let data = "|+
+  some folded
+  lines
+  here
+
+
+some.other.key: value";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("some folded\nlines\nhere\n\n\n"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn literal_interior_breaks() -> TestResult
+    {
+        let data = "|-
+  this
+
+  has
+
+  breaks
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("this\n\nhas\n\nbreaks"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    /* === FOLDED STYLE === */
+
+    #[test]
+    fn folded_simple() -> TestResult
+    {
+        let data = ">\n  this is a simple block scalar";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("this is a simple block scalar"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_clip() -> TestResult
+    {
+        let data = ">\n  trailing lines...\n \n\n";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("trailing lines...\n"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_strip() -> TestResult
+    {
+        let data = ">-\n  trailing lines...\n \n\n";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("trailing lines..."), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_keep() -> TestResult
+    {
+        let data = ">+\n  trailing lines...\n \n\n";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("trailing lines...\n\n\n"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_line_folding() -> TestResult
+    {
+        let data = ">
+  some folded
+  lines
+  here
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("some folded lines here\n"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_preceding_breaks() -> TestResult
+    {
+        let data = ">-
+
+
+  some folded
+  lines
+  here
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("\n\nsome folded lines here"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_trailing_breaks() -> TestResult
+    {
+        let data = ">+
+  some folded
+  lines
+  here
+
+
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("some folded lines here\n\n\n"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_trailing_chars() -> TestResult
+    {
+        let data = ">+
+  some folded
+  lines
+  here
+
+
+some.other.key: value";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("some folded lines here\n\n\n"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_interior_breaks() -> TestResult
+    {
+        let data = ">-
+  this
+
+  has
+
+  breaks
+";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("this\nhas\nbreaks"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    const LITERAL: bool = false;
+}
