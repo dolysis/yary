@@ -129,7 +129,7 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
 
     // Loop over scalar line by line until we reach a less
     // indented line or EOF
-    while local_stats.column == indent && buffer.len() != 0
+    while local_stats.column == indent && (!buffer.is_empty())
     {
         /*
          * We're at the start of an indented line
@@ -298,7 +298,7 @@ fn scan_indent(
     indent: usize,
 ) -> Result<bool>
 {
-    if !(stats.column < indent)
+    if stats.column >= indent
     {
         return Ok(false);
     }
