@@ -375,6 +375,35 @@ macro_rules! isHex {
     };
 }
 
+/// Returns the length of the unicode character (@ .offset)
+///
+/// Modifiers:
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants:
+///     /1 .buffer := /2 .buffer, 0
+///     /2 .buffer, .offset
+macro_rules! widthOf {
+    (~ $buffer:expr $(, $offset:expr )?) => {
+        widthOf!($buffer.as_bytes() $(, $offset)?)
+    };
+    ($buffer:expr $(, $offset:expr )?) => {
+        widthOf!(@priv $buffer $(, $offset)? )
+    };
+    (@priv $buffer:expr) => {
+        widthOf!(@priv $buffer, 0)
+    };
+    (@priv $buffer:expr, $offset:expr) => {
+        match $buffer.get($offset) {
+            Some(c) if c & 0x80 == 0x00 => 1,
+            Some(c) if c & 0xE0 == 0xC0 => 2,
+            Some(c) if c & 0xF0 == 0xE0 => 3,
+            Some(c) if c & 0xF8 == 0xF0 => 4,
+            _ => 0,
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests
 {
