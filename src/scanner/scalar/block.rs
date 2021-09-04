@@ -498,7 +498,7 @@ fn skip_blanks(buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<
 
     if comments && check!(~buffer => b'#')
     {
-        while !isWhiteSpaceZ!(~buffer)
+        while !isBreakZ!(~buffer)
         {
             advance!(*buffer, :stats, 1);
         }
