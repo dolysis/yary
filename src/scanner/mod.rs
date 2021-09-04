@@ -2310,6 +2310,60 @@ mod tests
     }
 
     #[test]
+    fn block_scalar_literal_simple()
+    {
+        use ScalarStyle::{Literal, Plain};
+
+        let data = "
+a key: |  # and a comment!
+    a block scalar,
+    separated by new lines
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                                  => "expected start of stream",
+            | Token::BlockMappingStart                                                  => "expected the start of a block mapping",
+            | Token::Key                                                                => "expected an explicit key",
+            | Token::Scalar(cow!("a key"), Plain)                                       => "expected a plain scalar",
+            | Token::Value                                                              => "expected a value",
+            | Token::Scalar(cow!("a block scalar,\nseparated by new lines\n"), Literal) => "expected a block scalar (literal)",
+            | Token::BlockEnd                                                           => "expected the end of a block mapping",
+            | Token::StreamEnd                                                          => "expected end of stream",
+            @ None                                                                      => "expected stream to be finished"
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
+    }
+
+    #[test]
+    fn block_scalar_folded_simple()
+    {
+        use ScalarStyle::{Folded, Plain};
+
+        let data = "
+a block scalar: >-  # and a comment!
+    with lines folded,
+    to a space
+";
+        let mut s = ScanIter::new(data);
+
+        tokens!(s =>
+            | Token::StreamStart(StreamEncoding::UTF8)                                  => "expected start of stream",
+            | Token::BlockMappingStart                                                  => "expected the start of a block mapping",
+            | Token::Key                                                                => "expected an explicit key",
+            | Token::Scalar(cow!("a block scalar"), Plain)                              => "expected a plain scalar",
+            | Token::Value                                                              => "expected a value",
+            | Token::Scalar(cow!("with lines folded, to a space"), Folded)              => "expected a block scalar (folded)",
+            | Token::BlockEnd                                                           => "expected the end of a block mapping",
+            | Token::StreamEnd                                                          => "expected end of stream",
+            @ None                                                                      => "expected stream to be finished"
+        );
+
+        assert_eq!(s.scan.stats, stats_of(data));
+    }
+
+    #[test]
     fn complex_no_map_sequence_scalar()
     {
         let data = r##"
