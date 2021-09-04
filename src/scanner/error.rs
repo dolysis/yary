@@ -64,6 +64,9 @@ pub enum ScanError
     /// sequence was encountered
     UnknownEscape,
 
+    /// Found a character that cannot start a valid Token
+    UnknownDelimiter,
+
     /// Got end of stream while parsing a token
     UnexpectedEOF,
 
