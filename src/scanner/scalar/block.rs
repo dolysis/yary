@@ -770,6 +770,21 @@ some.other.key: value";
         Ok(())
     }
 
+    #[test]
+    fn literal_comment() -> TestResult
+    {
+        let data = "| # a comment here.\n  simple block scalar";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("simple block scalar"), Literal);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
     /* === FOLDED STYLE === */
 
     #[test]
@@ -927,6 +942,21 @@ some.other.key: value";
         let mut stats = MStats::new();
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("this\nhas\nbreaks"), Folded);
+
+        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+
+        assert_eq!(token, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn folded_comment() -> TestResult
+    {
+        let data = "> # a comment here.\n  simple block scalar";
+        let mut stats = MStats::new();
+        let cxt = cxt!(block -> [0]);
+        let expected = Token::Scalar(cow!("simple block scalar"), Folded);
 
         let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
 
