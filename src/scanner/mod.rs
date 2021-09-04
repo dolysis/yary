@@ -19,7 +19,7 @@ use self::{
     entry::TokenEntry,
     error::{ScanError, ScanResult as Result},
     key::{Key, KeyPossible},
-    scalar::plain::scan_plain_scalar,
+    scalar::{block::scan_block_scalar, plain::scan_plain_scalar},
 };
 use crate::{
     queue::Queue,
@@ -162,7 +162,10 @@ impl Scanner
             [TAG, ..] => self.tag(base, tokens),
 
             // Is it a block scalar?
-            // TODO
+            [c @ LITERAL, ..] | [c @ FOLDED, ..] if self.context.is_block() =>
+            {
+                self.block_scalar(base, tokens, *c == FOLDED)
+            },
 
             // Is it a flow scalar?
             [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
@@ -483,6 +486,33 @@ impl Scanner
         // an indicator or new line before a key is valid
         // again.
         self.simple_key_allowed = false;
+
+        advance!(*base, amt);
+        self.stats = stats;
+
+        enqueue!(token, :self.stats => tokens);
+
+        Ok(())
+    }
+
+    fn block_scalar<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+        fold: bool,
+    ) -> Result<()>
+    {
+        let buffer = *base;
+        let mut stats = self.stats.clone();
+
+        // Remove any saved keys
+        self.remove_saved_key()?;
+
+        // A block scalar cannot be a key, therefore a key may
+        // always follow a block scalar.
+        self.simple_key_allowed = true;
+
+        let (token, amt) = scan_block_scalar(buffer, &mut stats, &self.context, fold)?;
 
         advance!(*base, amt);
         self.stats = stats;
@@ -1273,6 +1303,8 @@ const FLOW_SEQUENCE_END: u8 = b']';
 const FLOW_ENTRY: u8 = b',';
 const BLOCK_ENTRY: u8 = b'-';
 const EXPLICIT_KEY: u8 = b'?';
+const LITERAL: u8 = b'|';
+const FOLDED: u8 = b'>';
 
 const COMMENTS: bool = true;
 const REQUIRED: bool = true;
