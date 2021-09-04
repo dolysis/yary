@@ -92,24 +92,31 @@ impl Scanner
     fn scan_next_token<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>)
         -> Result<()>
     {
+        // Is it the beginning of the stream?
         if self.state == StreamState::Start
         {
             self.start_stream(tokens);
             return Ok(());
         }
 
+        // Eat whitespace to the next delimiter
         self.eat_whitespace(base, COMMENTS);
 
+        // Remove any saved key positions that cannot contain keys
+        // anymore
         self.expire_stale_saved_key()?;
 
+        // Handle indentation unrolling
         self.pop_zero_indent_sequence(*base, tokens)?;
         self.unroll_indent(tokens, self.stats.column)?;
 
+        // Is it the end of a stream?
         if base.is_empty() || self.state == StreamState::Done
         {
             return self.stream_end(*base, tokens);
         }
 
+        // Fetch the next token(s)
         match base.as_bytes()
         {
             // Is it a directive?
@@ -174,8 +181,7 @@ impl Scanner
             _ if self.is_plain_scalar(*base) => self.plain_scalar(base, tokens),
 
             // Otherwise its an error
-            // TODO
-            _ => unreachable!(),
+            _ => return Err(ScanError::UnknownDelimiter),
         }
     }
 
