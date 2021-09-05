@@ -926,11 +926,11 @@ impl Scanner
             | [FLOW_MAPPING_END, ..]
             | [FLOW_SEQUENCE_END]
             | [FLOW_ENTRY, ..]
-            | [b'|', ..]
-            | [b'<', ..]
-            | [b'#', ..]
-            | [b'@', ..]
-            | [b'`', ..] => false,
+            | [LITERAL, ..]
+            | [FOLDED, ..]
+            | [COMMENT, ..]
+            | [RESERVED_1, ..]
+            | [RESERVED_2, ..] => false,
             [VALUE, ..] | [EXPLICIT_KEY, ..] | [BLOCK_ENTRY, ..]
                 if !is_plain_safe_c(base, 1, self.context.is_block()) =>
             {
@@ -1045,8 +1045,8 @@ impl AnchorKind
     {
         let s = match b
         {
-            b'*' => Self::Alias,
-            b'&' => Self::Anchor,
+            &ALIAS => Self::Alias,
+            &ANCHOR => Self::Anchor,
             _ => return None,
         };
 
@@ -1311,11 +1311,13 @@ const BLOCK_ENTRY: u8 = b'-';
 const EXPLICIT_KEY: u8 = b'?';
 const LITERAL: u8 = b'|';
 const FOLDED: u8 = b'>';
+const COMMENT: u8 = b'#';
+const RESERVED_1: u8 = b'@';
+const RESERVED_2: u8 = b'`';
 
 const COMMENTS: bool = true;
 const REQUIRED: bool = true;
 const BLOCK_MAP: bool = true;
-const BUG: &str = "LIBRARY BUG!! HIT AN UNREACHABLE STATEMENT";
 
 #[cfg(test)]
 mod tests
