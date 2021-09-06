@@ -298,9 +298,6 @@ impl Scanner
         Ok(())
     }
 
-    /// Try eat a tag, returning a Token if one could be
-    /// found at the current buffer head, or none if one
-    /// couldn't.
     fn fetch_tag<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
