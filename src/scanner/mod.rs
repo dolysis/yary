@@ -93,7 +93,7 @@ impl Scanner
         // Is it the beginning of the stream?
         if self.state == StreamState::Start
         {
-            self.start_stream(tokens);
+            self.fetch_stream_start(tokens);
             return Ok(());
         }
 
@@ -111,79 +111,79 @@ impl Scanner
         // Is it the end of a stream?
         if base.is_empty() || self.state == StreamState::Done
         {
-            return self.stream_end(*base, tokens);
+            return self.fetch_stream_end(*base, tokens);
         }
 
         // Fetch the next token(s)
         match base.as_bytes()
         {
             // Is it a directive?
-            [DIRECTIVE, ..] if self.stats.column == 0 => self.directive(base, tokens),
+            [DIRECTIVE, ..] if self.stats.column == 0 => self.fetch_directive(base, tokens),
 
             // Is it a document marker?
             [b @ b'-', b'-', b'-', ..] | [b @ b'.', b'.', b'.', ..]
                 if self.stats.column == 0 && isWhiteSpaceZ!(~base, 3) =>
             {
-                self.document_marker(base, tokens, *b == b'-')
+                self.fetch_document_marker(base, tokens, *b == b'-')
             },
 
             // Is it the start of a flow collection?
             [b @ FLOW_MAPPING_START, ..] | [b @ FLOW_SEQUENCE_START, ..] =>
             {
-                self.flow_collection_start(base, tokens, *b == FLOW_MAPPING_START)
+                self.fetch_flow_collection_start(base, tokens, *b == FLOW_MAPPING_START)
             },
 
             // Is it the end of a flow collection?
             [b @ FLOW_MAPPING_END, ..] | [b @ FLOW_SEQUENCE_END, ..] =>
             {
-                self.flow_collection_end(base, tokens, *b == FLOW_MAPPING_END)
+                self.fetch_flow_collection_end(base, tokens, *b == FLOW_MAPPING_END)
             },
 
             // Is a flow collection entry?
-            [FLOW_ENTRY, ..] => self.flow_collection_entry(base, tokens),
+            [FLOW_ENTRY, ..] => self.fetch_flow_collection_entry(base, tokens),
 
             // Is it a block entry?
             [BLOCK_ENTRY, ..] if isWhiteSpaceZ!(~base, 1) =>
             {
-                self.block_collection_entry(base, tokens)
+                self.fetch_block_collection_entry(base, tokens)
             },
 
             // Is it an explicit key?
             [EXPLICIT_KEY, ..] if self.context.is_flow() || isWhiteSpaceZ!(~base, 1) =>
             {
-                self.explicit_key(base, tokens)
+                self.fetch_explicit_key(base, tokens)
             },
 
             // Is it a value?
             [VALUE, ..] if isWhiteSpaceZ!(~base, 1) || self.context.is_flow() =>
             {
-                self.value(base, tokens)
+                self.fetch_value(base, tokens)
             },
 
             // Is it an anchor or alias?
-            [ANCHOR, ..] | [ALIAS, ..] => self.anchor(base, tokens),
+            [ANCHOR, ..] | [ALIAS, ..] => self.fetch_anchor(base, tokens),
 
             // Is it a tag?
-            [TAG, ..] => self.tag(base, tokens),
+            [TAG, ..] => self.fetch_tag(base, tokens),
 
             // Is it a block scalar?
             [c @ LITERAL, ..] | [c @ FOLDED, ..] if self.context.is_block() =>
             {
-                self.block_scalar(base, tokens, *c == FOLDED)
+                self.fetch_block_scalar(base, tokens, *c == FOLDED)
             },
 
             // Is it a flow scalar?
-            [SINGLE, ..] | [DOUBLE, ..] => self.flow_scalar(base, tokens),
+            [SINGLE, ..] | [DOUBLE, ..] => self.fetch_flow_scalar(base, tokens),
 
             // Is it a plain scalar?
-            _ if self.is_plain_scalar(*base) => self.plain_scalar(base, tokens),
+            _ if self.is_plain_scalar(*base) => self.fetch_plain_scalar(base, tokens),
 
             // Otherwise its an error
             _ => return Err(ScanError::UnknownDelimiter),
         }
     }
 
-    fn start_stream(&mut self, tokens: &mut Tokens)
+    fn fetch_stream_start(&mut self, tokens: &mut Tokens)
     {
         if self.state == StreamState::Start
         {
@@ -198,7 +198,7 @@ impl Scanner
         }
     }
 
-    fn stream_end(&mut self, buffer: &str, tokens: &mut Tokens) -> Result<()>
+    fn fetch_stream_end(&mut self, buffer: &str, tokens: &mut Tokens) -> Result<()>
     {
         match (self.state, buffer.is_empty())
         {
@@ -248,8 +248,12 @@ impl Scanner
         amt
     }
 
-    fn document_marker(&mut self, buffer: &mut &str, tokens: &mut Tokens, start: bool)
-        -> Result<()>
+    fn fetch_document_marker(
+        &mut self,
+        buffer: &mut &str,
+        tokens: &mut Tokens,
+        start: bool,
+    ) -> Result<()>
     {
         let token = match start
         {
@@ -273,7 +277,8 @@ impl Scanner
         Ok(())
     }
 
-    fn directive<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_directive<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>)
+        -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -320,7 +325,7 @@ impl Scanner
     /// Try eat a tag, returning a Token if one could be
     /// found at the current buffer head, or none if one
     /// couldn't.
-    fn tag<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_tag<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -349,7 +354,7 @@ impl Scanner
         Ok(())
     }
 
-    fn anchor<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_anchor<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -385,7 +390,11 @@ impl Scanner
         Ok(())
     }
 
-    fn flow_scalar<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_flow_scalar<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         let buffer = *base;
         let mut stats = MStats::new();
@@ -415,7 +424,11 @@ impl Scanner
         Ok(())
     }
 
-    fn plain_scalar<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_plain_scalar<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         let buffer = *base;
         let mut stats = self.stats.clone();
@@ -437,7 +450,7 @@ impl Scanner
         Ok(())
     }
 
-    fn block_scalar<'de>(
+    fn fetch_block_scalar<'de>(
         &mut self,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
@@ -464,7 +477,11 @@ impl Scanner
         Ok(())
     }
 
-    fn explicit_key<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_explicit_key<'de>(
+        &mut self,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         let block_context = self.context.is_block();
         /*
@@ -530,7 +547,7 @@ impl Scanner
     /// Fetch a value token (':') from .base, adding to
     /// .tokens. Also handles unwinding any saved
     /// keys and indentation increases, as needed
-    fn value<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_value<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
     {
         // If we found a simple key
         match self.key.saved().take()
@@ -595,7 +612,7 @@ impl Scanner
         Ok(())
     }
 
-    fn flow_collection_start<'de>(
+    fn fetch_flow_collection_start<'de>(
         &mut self,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
@@ -622,7 +639,7 @@ impl Scanner
         Ok(())
     }
 
-    fn flow_collection_end<'de>(
+    fn fetch_flow_collection_end<'de>(
         &mut self,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
@@ -651,7 +668,7 @@ impl Scanner
         Ok(())
     }
 
-    fn flow_collection_entry<'de>(
+    fn fetch_flow_collection_entry<'de>(
         &mut self,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
@@ -672,7 +689,7 @@ impl Scanner
         Ok(())
     }
 
-    fn block_collection_entry<'de>(
+    fn fetch_block_collection_entry<'de>(
         &mut self,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
