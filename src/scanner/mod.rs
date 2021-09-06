@@ -12,20 +12,16 @@ mod scalar;
 mod stats;
 mod tag;
 
-use self::{
-    context::{Context, Indent},
-    entry::TokenEntry,
-    error::{ScanError, ScanResult as Result},
-    key::{Key, KeyPossible},
-    scalar::{block::scan_block_scalar, plain::scan_plain_scalar},
-    stats::MStats,
-};
 use crate::{
     queue::Queue,
     scanner::{
-        context::STARTING_INDENT,
+        context::{Context, Indent, STARTING_INDENT},
         directive::{scan_directive, DirectiveKind},
-        scalar::flow::scan_flow_scalar,
+        entry::TokenEntry,
+        error::{ScanError, ScanResult as Result},
+        key::{Key, KeyPossible},
+        scalar::{block::scan_block_scalar, flow::scan_flow_scalar, plain::scan_plain_scalar},
+        stats::MStats,
         tag::scan_node_tag,
     },
     token::{Marker, StreamEncoding, Token},
