@@ -224,30 +224,6 @@ impl Scanner
         Ok(())
     }
 
-    /// Chomp whitespace and optionally comments until we
-    /// reach the next token, updating buffer[0] to the
-    /// beginning of the new token
-    fn eat_whitespace(&mut self, buffer: &mut &str, comments: bool) -> usize
-    {
-        let mut stats = MStats::new();
-
-        let amt = eat_whitespace(*buffer, &mut stats, comments);
-
-        // A new line may start a key in the block context
-        //
-        // FIXME: we don't track flow/block contexts yet, add check
-        // here when we do
-        if stats.lines != 0
-        {
-            self.simple_key_allowed = true;
-        }
-
-        advance!(*buffer, amt);
-        self.stats += stats;
-
-        amt
-    }
-
     fn fetch_document_marker(
         &mut self,
         buffer: &mut &str,
@@ -891,6 +867,30 @@ impl Scanner
             },
             _ => true,
         }
+    }
+
+    /// Chomp whitespace and optionally comments until we
+    /// reach the next token, updating buffer[0] to the
+    /// beginning of the new token
+    fn eat_whitespace(&mut self, buffer: &mut &str, comments: bool) -> usize
+    {
+        let mut stats = MStats::new();
+
+        let amt = eat_whitespace(*buffer, &mut stats, comments);
+
+        // A new line may start a key in the block context
+        //
+        // FIXME: we don't track flow/block contexts yet, add check
+        // here when we do
+        if stats.lines != 0
+        {
+            self.simple_key_allowed = true;
+        }
+
+        advance!(*buffer, amt);
+        self.stats += stats;
+
+        amt
     }
 }
 
