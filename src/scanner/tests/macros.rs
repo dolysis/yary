@@ -7,8 +7,8 @@
 /// failure
 macro_rules! tokens {
     ($scanner:expr => $($id:tt $expected:expr $(=> $msg:tt)?),+ ) => {
-        fn __tokens<'de>(s: &mut crate::scanner::ScanIter<'de>) {
-            let f = move |i: &mut crate::scanner::ScanIter| -> std::result::Result<(), ::anyhow::Error> {
+        fn __tokens<'de>(s: &mut crate::scanner::tests::ScanIter<'de>) {
+            let f = move |i: &mut crate::scanner::tests::ScanIter| -> std::result::Result<(), ::anyhow::Error> {
 
                 $( tokens!(@unwrap $id i => $expected $(=> $msg)? ); )+
 
