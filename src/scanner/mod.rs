@@ -4,14 +4,13 @@
 mod macros;
 
 mod context;
+mod directive;
 mod entry;
 mod error;
 mod key;
 mod scalar;
 mod stats;
 mod tag;
-
-use atoi::atoi;
 
 use self::{
     context::{Context, Indent},
@@ -25,8 +24,9 @@ use crate::{
     queue::Queue,
     scanner::{
         context::STARTING_INDENT,
+        directive::{scan_directive, DirectiveKind},
         scalar::flow::scan_flow_scalar,
-        tag::{scan_node_tag, scan_tag_directive},
+        tag::scan_node_tag,
     },
     token::{Marker, StreamEncoding, Token},
 };
@@ -302,49 +302,15 @@ impl Scanner
         // '%' + 'YAML' or 'TAG'
         advance!(buffer, :stats, 1 + kind.len());
 
-        let token = match kind
-        {
-            DirectiveKind::Version =>
-            {
-                // Chomp any preceding whitespace
-                advance!(buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
-
-                // %YAML 1.1
-                //       ^
-                let (major, skip) = scan_directive_version(buffer)?;
-                advance!(buffer, :stats, skip);
-
-                // %YAML 1.1
-                //        ^
-                check!(~buffer => b'.', else ScanError::InvalidVersion)?;
-                advance!(buffer, :stats, 1);
-
-                // %YAML 1.1
-                //         ^
-                let (minor, skip) = scan_directive_version(buffer)?;
-                advance!(buffer, :stats, skip);
-
-                Token::VersionDirective(major, minor)
-            },
-            DirectiveKind::Tag =>
-            {
-                // Chomp any spaces up to the handle
-                advance!(buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
-
-                // Scan the directive, copying if necessary
-                let (token, amt) = scan_tag_directive(buffer, &mut stats)?;
-                advance!(buffer, amt);
-
-                token
-            },
-        };
+        // Scan the directive token from the .buffer
+        let token = scan_directive(&mut buffer, &mut stats, &kind)?;
 
         // A key cannot follow a directive (a newline is required)
         self.simple_key_allowed = false;
 
         // %YAML 1.1 # some comment\n
         //          ^^^^^^^^^^^^^^^^^ buffer
-        // ^^^^^^^^^ self.buffer.len - buffer.len
+        // ^^^^^^^^^ base.len - buffer.len
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
@@ -995,43 +961,6 @@ impl<'de> Iterator for ScanIter<'de>
 
 impl<'de> std::iter::FusedIterator for ScanIter<'de> {}
 
-enum DirectiveKind
-{
-    Version,
-    Tag,
-}
-
-impl DirectiveKind
-{
-    const V_LEN: usize = 4;
-    const T_LEN: usize = 3;
-
-    fn new(b: &str) -> Result<Self>
-    {
-        if b.starts_with("YAML")
-        {
-            Ok(Self::Version)
-        }
-        else if b.starts_with("TAG")
-        {
-            Ok(Self::Tag)
-        }
-        else
-        {
-            Err(ScanError::UnknownDirective)
-        }
-    }
-
-    fn len(&self) -> usize
-    {
-        match self
-        {
-            Self::Version => Self::V_LEN,
-            Self::Tag => Self::T_LEN,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum AnchorKind
 {
@@ -1054,22 +983,6 @@ impl AnchorKind
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum StreamState
-{
-    Start,
-    Stream,
-    Done,
-}
-
-fn scan_directive_version(b: &str) -> Result<(u8, usize)>
-{
-    let v_slice = take_while(b.as_bytes(), u8::is_ascii_digit);
-    let v = atoi(v_slice).ok_or(ScanError::InvalidVersion)?;
-
-    Ok((v, v_slice.len()))
-}
-
 fn take_while<F>(b: &[u8], f: F) -> &[u8]
 where
     F: Fn(&u8) -> bool,
@@ -1084,6 +997,14 @@ where
             _ => return &b[..index],
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum StreamState
+{
+    Start,
+    Stream,
+    Done,
 }
 
 /// Chomp whitespace and .comments if allowed until a non
