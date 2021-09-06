@@ -877,60 +877,6 @@ impl Scanner
     }
 }
 
-struct ScanIter<'de>
-{
-    data:   &'de str,
-    scan:   Scanner,
-    tokens: Tokens<'de>,
-
-    done: bool,
-}
-
-impl<'de> ScanIter<'de>
-{
-    pub fn new(data: &'de str) -> Self
-    {
-        Self {
-            data,
-            scan: Scanner::new(),
-            tokens: Tokens::new(),
-            done: false,
-        }
-    }
-
-    pub fn next_token(&mut self) -> Result<Option<Token<'de>>>
-    {
-        if (!self.done) && self.tokens.is_empty()
-        {
-            if let 0 = self.scan.scan_tokens(self.data, &mut self.tokens)?
-            {
-                self.done = true
-            }
-        }
-
-        if !self.done
-        {
-            Ok(self.tokens.pop().map(|e| e.into_token()))
-        }
-        else
-        {
-            Ok(None)
-        }
-    }
-}
-
-impl<'de> Iterator for ScanIter<'de>
-{
-    type Item = Result<Token<'de>>;
-
-    fn next(&mut self) -> Option<Self::Item>
-    {
-        dbg!(self.next_token().transpose())
-    }
-}
-
-impl<'de> std::iter::FusedIterator for ScanIter<'de> {}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum StreamState
 {
@@ -1119,6 +1065,60 @@ mod tests
 
     use super::*;
     use crate::token::{ScalarStyle::*, Token::*};
+
+    struct ScanIter<'de>
+    {
+        data:   &'de str,
+        scan:   Scanner,
+        tokens: Tokens<'de>,
+
+        done: bool,
+    }
+
+    impl<'de> ScanIter<'de>
+    {
+        pub fn new(data: &'de str) -> Self
+        {
+            Self {
+                data,
+                scan: Scanner::new(),
+                tokens: Tokens::new(),
+                done: false,
+            }
+        }
+
+        pub fn next_token(&mut self) -> Result<Option<Token<'de>>>
+        {
+            if (!self.done) && self.tokens.is_empty()
+            {
+                if let 0 = self.scan.scan_tokens(self.data, &mut self.tokens)?
+                {
+                    self.done = true
+                }
+            }
+
+            if !self.done
+            {
+                Ok(self.tokens.pop().map(|e| e.into_token()))
+            }
+            else
+            {
+                Ok(None)
+            }
+        }
+    }
+
+    impl<'de> Iterator for ScanIter<'de>
+    {
+        type Item = Result<Token<'de>>;
+
+        fn next(&mut self) -> Option<Self::Item>
+        {
+            dbg!(self.next_token().transpose())
+        }
+    }
+
+    impl<'de> std::iter::FusedIterator for ScanIter<'de> {}
 
     /// Calculate what the stats of a given slice should be
     fn stats_of(base: &str) -> MStats
