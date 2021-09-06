@@ -66,7 +66,7 @@
 //! queue position
 //! ```
 
-use super::MStats;
+use crate::scanner::stats::MStats;
 
 /// Manages the state for tracking possible implicit Keys
 /// that the Scanner might may encounter during runtime
