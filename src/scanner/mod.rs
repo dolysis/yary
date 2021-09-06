@@ -3,6 +3,7 @@
 #[macro_use]
 mod macros;
 
+mod anchor;
 mod context;
 mod directive;
 mod entry;
@@ -15,6 +16,7 @@ mod tag;
 use crate::{
     queue::Queue,
     scanner::{
+        anchor::{scan_anchor, AnchorKind},
         context::{Context, Indent, STARTING_INDENT},
         directive::{scan_directive, DirectiveKind},
         entry::TokenEntry,
@@ -363,46 +365,18 @@ impl Scanner
             _ => return Ok(()),
         };
 
+        // An anchor / alias may start a simple key
         self.save_key(!REQUIRED)?;
 
-        advance!(buffer, :stats, 1);
-
-        // *anchor 'rest of the line'
-        //  ^^^^^^
-        let anchor = take_while(buffer.as_bytes(), u8::is_ascii_alphanumeric);
-
-        let anchor = advance!(<- buffer, :stats, anchor.len());
-
-        // anchor name cannot be empty, must contain >= 1
-        // alphanumeric character
-        if anchor.is_empty()
-        {
-            return Err(ScanError::InvalidAnchorName);
-        }
-
-        // *anchor 'rest of the line'
-        //        ^
-        // There does not necessarily need to be a whitespace so we
-        // also check against a list of valid starting
-        // tokens
-
-        check!(~buffer
-            => b' ' | b'\n' | b'?' | b',' | b']' | b'}' | b'%' | b'@' | b'`',
-            else ScanError::InvalidAnchorName
-        )?;
-
-        let token = match kind
-        {
-            AnchorKind::Alias => Token::Alias(cow!(anchor)),
-            AnchorKind::Anchor => Token::Anchor(cow!(anchor)),
-        };
+        // Scan the token from the .buffer
+        let token = scan_anchor(&mut buffer, &mut stats, &kind)?;
 
         // A key may not start after an anchor (only before)
         self.simple_key_allowed = false;
 
         // *anchor 'rest of the line'
         //        ^^^^^^^^^^^^^^^^^^^ buffer.len
-        // ^^^^^^^ self.buffer.len - buffer.len
+        // ^^^^^^^ base.len - buffer.len
         advance!(*base, base.len() - buffer.len());
         self.stats += stats;
 
@@ -956,44 +930,6 @@ impl<'de> Iterator for ScanIter<'de>
 }
 
 impl<'de> std::iter::FusedIterator for ScanIter<'de> {}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum AnchorKind
-{
-    Anchor,
-    Alias,
-}
-
-impl AnchorKind
-{
-    pub fn new(b: &u8) -> Option<Self>
-    {
-        let s = match b
-        {
-            &ALIAS => Self::Alias,
-            &ANCHOR => Self::Anchor,
-            _ => return None,
-        };
-
-        Some(s)
-    }
-}
-
-fn take_while<F>(b: &[u8], f: F) -> &[u8]
-where
-    F: Fn(&u8) -> bool,
-{
-    let mut index = 0;
-
-    loop
-    {
-        match b.get(index)
-        {
-            Some(b) if f(b) => index += 1,
-            _ => return &b[..index],
-        }
-    }
-}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum StreamState
