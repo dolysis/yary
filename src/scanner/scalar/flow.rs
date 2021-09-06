@@ -4,7 +4,7 @@ use crate::{
     scanner::{
         error::{ScanError, ScanResult as Result},
         scalar::escape::flow_unescape,
-        MStats,
+        stats::MStats,
     },
     token::{ScalarStyle, Token},
 };

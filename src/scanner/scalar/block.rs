@@ -26,7 +26,7 @@ use crate::{
     scanner::{
         context::Context,
         error::{ScanError, ScanResult as Result},
-        MStats,
+        stats::MStats,
     },
     token::{ScalarStyle, Slice, Token},
 };

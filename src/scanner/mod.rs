@@ -8,9 +8,8 @@ mod entry;
 mod error;
 mod key;
 mod scalar;
+mod stats;
 mod tag;
-
-use std::ops::{Add, AddAssign};
 
 use atoi::atoi;
 
@@ -20,6 +19,7 @@ use self::{
     error::{ScanError, ScanResult as Result},
     key::{Key, KeyPossible},
     scalar::{block::scan_block_scalar, plain::scan_plain_scalar},
+    stats::MStats,
 };
 use crate::{
     queue::Queue,
@@ -1222,77 +1222,6 @@ fn is_plain_safe_c(base: &str, offset: usize, block_context: bool) -> bool
     let not_flow_indicator = !check!(~base, offset => b',' | b'[' | b']' | b'{' | b'}');
 
     block_context || (flow_context && not_flow_indicator)
-}
-
-/// Vessel for tracking various stats about the underlying
-/// buffer that are required for correct parsing of certain
-/// elements, and when contextualizing an error.
-#[derive(Debug, Clone, PartialEq)]
-struct MStats
-{
-    read:   usize,
-    lines:  usize,
-    column: usize,
-}
-
-impl MStats
-{
-    fn new() -> Self
-    {
-        Self::default()
-    }
-
-    fn update(&mut self, read: usize, lines: usize, column: usize)
-    {
-        self.read += read;
-        self.lines += lines;
-
-        match lines
-        {
-            0 => self.column += column,
-            _ => self.column = column,
-        }
-    }
-}
-
-impl Default for MStats
-{
-    fn default() -> Self
-    {
-        Self {
-            read:   0,
-            lines:  0,
-            column: 0,
-        }
-    }
-}
-
-impl Add for MStats
-{
-    type Output = Self;
-
-    fn add(mut self, rhs: Self) -> Self::Output
-    {
-        self += rhs;
-
-        self
-    }
-}
-
-impl AddAssign for MStats
-{
-    fn add_assign(&mut self, rhs: Self)
-    {
-        self.update(rhs.read, rhs.lines, rhs.column)
-    }
-}
-
-impl PartialEq<(usize, usize, usize)> for MStats
-{
-    fn eq(&self, (read, lines, column): &(usize, usize, usize)) -> bool
-    {
-        self.read == *read && self.lines == *lines && self.column == *column
-    }
 }
 
 const DIRECTIVE: u8 = b'%';

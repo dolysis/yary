@@ -67,7 +67,7 @@ use crate::{
         eat_whitespace,
         error::{ScanError, ScanResult as Result},
         scalar::escape::tag_uri_unescape,
-        MStats,
+        stats::MStats,
     },
     token::{Slice, Token},
 };
