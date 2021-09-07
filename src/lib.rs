@@ -3,6 +3,5 @@
 
 mod error;
 mod queue;
-mod reader;
 mod scanner;
 mod token;
