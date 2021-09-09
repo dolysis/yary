@@ -196,7 +196,7 @@ impl Scanner
             _ if self.is_plain_scalar(*base) => self.fetch_plain_scalar(opts, base, tokens),
 
             // Otherwise its an error
-            _ => return Err(ScanError::UnknownDelimiter),
+            _ => Err(ScanError::UnknownDelimiter),
         }
     }
 

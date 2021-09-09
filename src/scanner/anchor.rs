@@ -65,10 +65,10 @@ impl AnchorKind
     /// starts from the given .byte
     pub fn new(byte: &u8) -> Option<Self>
     {
-        let s = match byte
+        let s = match *byte
         {
-            &ALIAS => Self::Alias,
-            &ANCHOR => Self::Anchor,
+            ALIAS => Self::Alias,
+            ANCHOR => Self::Anchor,
             _ => return None,
         };
 
