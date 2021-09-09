@@ -23,6 +23,9 @@ jobs:
           - name: "Unit Tests"
             cmd: test
             args: --lib --bins
+          - name: "Unit Tests: feature.test_buffer_small"
+            cmd: test
+            args: --lib --features=test_buffer_small
         include:
           - os: ubuntu-latest
             sccache-path: /home/runner/.cache/sccache
