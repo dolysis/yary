@@ -418,8 +418,7 @@ impl Scanner
             return Ok(());
         }
 
-        let (range, amt) = scan_flow_scalar(opts, buffer, &mut stats, single)?;
-        let token = range.into_token(buffer)?;
+        let (token, amt) = scan_flow_scalar(opts, buffer, &mut stats, single)?;
 
         self.save_key(!REQUIRED)?;
 
