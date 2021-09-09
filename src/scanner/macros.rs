@@ -87,6 +87,60 @@ macro_rules! cow {
     };
 }
 
+/// Check that the underlying .buffer has at least the given
+/// number of UTF8 .codepoints available, returning an error
+/// if O_EXTENDABLE is set in .opts. Returns the number of
+/// _bytes_ read.
+///
+/// Modifiers
+///     ~ .buffer := .buffer.as_bytes()
+///
+/// Variants
+///     /1 .buffer, .codepoints
+///         := /4 .buffer, @0, .codepoints, O_ZEROED
+///     /2 .buffer, @.offset, .codepoints
+///         := /4 .buffer, @.offset, .codepoints, O_ZEROED
+///     /3 .buffer, .codepoints, .opts
+///         := /4 .buffer @0, .codepoints, .opts
+///     /4 .buffer, @.offset, .codepoints, .opts
+macro_rules! cache {
+    (~$buffer:expr $(, @$offset:expr )?, $codepoints:expr $(, $opts:expr )?) => {
+        cache!($buffer.as_bytes(), $( @$offset, )? $codepoints $(, $opts )?)
+    };
+    ($buffer:expr $(, @$offset:expr )?, $codepoints:expr $(, $opts:expr )?) => {
+        cache!(@inner $buffer, $( @$offset, )? @0, $codepoints $(, $opts )?, $crate::scanner::flag::O_ZEROED)
+    };
+    (@inner $buffer:expr, @$offset:expr, $( @$_:expr, )? $codepoints:expr, $opts:expr $(, $__:expr )?) => {
+        cache!(@priv $buffer, $offset, $codepoints, $opts.contains($crate::scanner::flag::O_EXTENDABLE))
+    };
+    (@priv $buffer:expr, $offset:expr, $codepoints:expr, $extend:expr) => {{
+        let mut ret = Ok(0);
+        let mut bytes = $offset;
+        for _ in 0..$codepoints
+        {
+            match widthOf!($buffer, bytes)
+            {
+                0 =>
+                {
+                    if $extend
+                    {
+                        ret = Err($crate::scanner::error::ScanError::Extend);
+                    }
+
+                    break;
+                },
+                n =>
+                {
+                    bytes += n;
+                    ret = ret.map(|r| r + n);
+                },
+            }
+        }
+
+        ret
+    }};
+}
+
 /// Check the .buffer (@ .offset) matches the given
 /// .pattern, optionally returning an .error.
 ///
