@@ -1,5 +1,6 @@
 use super::{
     error::{ScanError, ScanResult as Result},
+    flag::Flags,
     stats::MStats,
     ALIAS, ANCHOR,
 };
@@ -8,6 +9,7 @@ use crate::token::Token;
 /// Scan an anchor or alias from the underlying .buffer
 /// returning the relevant Token
 pub(in crate::scanner) fn scan_anchor<'de>(
+    opts: Flags,
     buffer: &mut &'de str,
     stats: &mut MStats,
     kind: &AnchorKind,
@@ -17,7 +19,7 @@ pub(in crate::scanner) fn scan_anchor<'de>(
 
     // *anchor 'rest of the line'
     //  ^^^^^^
-    let anchor = take_while(buffer.as_bytes(), u8::is_ascii_alphanumeric);
+    let anchor = take_while(opts, buffer.as_bytes(), u8::is_ascii_alphanumeric)?;
 
     let anchor = advance!(<- *buffer, :stats, anchor.len());
 
@@ -33,6 +35,7 @@ pub(in crate::scanner) fn scan_anchor<'de>(
     // There does not necessarily need to be a whitespace so we
     // also check against a list of valid starting
     // tokens
+    cache!(~buffer, 1, opts)?;
     check!(~buffer
         => b' ' | b'\n' | b'?' | b',' | b']' | b'}' | b'%' | b'@' | b'`',
         else ScanError::InvalidAnchorName
@@ -73,7 +76,7 @@ impl AnchorKind
     }
 }
 
-fn take_while<F>(b: &[u8], f: F) -> &[u8]
+fn take_while<F>(opts: Flags, base: &[u8], f: F) -> Result<&[u8]>
 where
     F: Fn(&u8) -> bool,
 {
@@ -81,10 +84,12 @@ where
 
     loop
     {
-        match b.get(index)
+        let i = cache!(base, @index, 1, opts)?;
+
+        match base.get(index)
         {
-            Some(b) if f(b) => index += 1,
-            _ => return &b[..index],
+            Some(b) if f(b) => index += i,
+            _ => return Ok(&base[..index]),
         }
     }
 }

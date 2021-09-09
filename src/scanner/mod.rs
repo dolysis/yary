@@ -178,7 +178,7 @@ impl Scanner
             },
 
             // Is it an anchor or alias?
-            [ANCHOR, ..] | [ALIAS, ..] => self.fetch_anchor(base, tokens),
+            [ANCHOR, ..] | [ALIAS, ..] => self.fetch_anchor(opts, base, tokens),
 
             // Is it a tag?
             [TAG, ..] => self.fetch_tag(opts, base, tokens),
@@ -353,7 +353,12 @@ impl Scanner
         Ok(())
     }
 
-    fn fetch_anchor<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_anchor<'de>(
+        &mut self,
+        opts: Flags,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -373,7 +378,7 @@ impl Scanner
         self.save_key(!REQUIRED)?;
 
         // Scan the token from the .buffer
-        let token = scan_anchor(&mut buffer, &mut stats, &kind)?;
+        let token = scan_anchor(opts, &mut buffer, &mut stats, &kind)?;
 
         // A key may not start after an anchor (only before)
         self.simple_key_allowed = false;
