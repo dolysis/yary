@@ -26,6 +26,7 @@ use crate::{
     scanner::{
         context::Context,
         error::{ScanError, ScanResult as Result},
+        flag::Flags,
         stats::MStats,
     },
     token::{ScalarStyle, Slice, Token},
@@ -40,6 +41,7 @@ use crate::{
 ///     YAML 1.2: Section 8.1
 ///     yaml.org/spec/1.2/#c-b-block-header(m,t)
 pub(in crate::scanner) fn scan_block_scalar<'de>(
+    opts: Flags,
     base: &'de str,
     stats: &mut MStats,
     cxt: &Context,
@@ -78,14 +80,16 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
     };
 
     // Eat the '|' or '>'
+    cache!(~buffer, 1, opts)?;
     advance!(buffer, :local_stats, 1);
 
     // Calculate any headers this scalar may have
-    let (chomp, explicit) = scan_headers(&mut buffer, &mut local_stats)?;
+    let (chomp, explicit) = scan_headers(opts, &mut buffer, &mut local_stats)?;
 
     // The header line must contain nothing after the headers
     // excluding a comment until the line ending
-    skip_blanks(&mut buffer, &mut local_stats, COMMENTS)?;
+    skip_blanks(opts, &mut buffer, &mut local_stats, COMMENTS)?;
+    cache!(~buffer, 1, opts)?;
     if !isWhiteSpaceZ!(~buffer)
     {
         return Err(ScanError::InvalidBlockScalar);
@@ -102,6 +106,7 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
         None =>
         {
             indent = detect_indent_level(
+                opts,
                 &mut buffer,
                 &mut local_stats,
                 cxt,
@@ -201,8 +206,11 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
         }
 
         // Eat the line's content until the line break (or EOF)
+        cache!(~buffer, 1, opts)?;
         while !isBreakZ!(~buffer)
         {
+            cache!(~buffer, 1, opts)?;
+
             if !can_borrow
             {
                 scratch.push(buffer.as_bytes()[0])
@@ -218,6 +226,7 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
         }
 
         // Eat the line break (if not EOF)
+        cache!(~buffer, 1, opts)?;
         if isBreak!(~buffer)
         {
             advance!(buffer, :local_stats, @line);
@@ -226,6 +235,7 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
 
         // Chomp indentation until the next indented line
         scan_indent(
+            opts,
             &mut buffer,
             &mut local_stats,
             &mut lines,
@@ -246,11 +256,17 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
 }
 
 /// Retrieve a block scalar's headers
-fn scan_headers(buffer: &mut &str, stats: &mut MStats) -> Result<(ChompStyle, IndentHeader)>
+fn scan_headers(
+    opts: Flags,
+    buffer: &mut &str,
+    stats: &mut MStats,
+) -> Result<(ChompStyle, IndentHeader)>
 {
     let mut skip = 0;
     let mut indent = None;
     let mut chomp = ChompStyle::Clip;
+
+    cache!(~buffer, 2, opts)?;
 
     // Set the explicit indent if it exists.
     //
@@ -291,6 +307,7 @@ fn scan_headers(buffer: &mut &str, stats: &mut MStats) -> Result<(ChompStyle, In
 
 /// Chomp the indentation spaces of a block scalar
 fn scan_indent(
+    opts: Flags,
     buffer: &mut &str,
     stats: &mut MStats,
     lines: &mut usize,
@@ -302,6 +319,8 @@ fn scan_indent(
     {
         return Ok(false);
     }
+
+    cache!(~buffer, 1, opts)?;
 
     while stats.column < indent && isWhiteSpace!(~buffer)
     {
@@ -321,6 +340,8 @@ fn scan_indent(
             *lines += 1;
             advance!(*buffer, :stats, @line);
         }
+
+        cache!(~buffer, 1, opts)?;
     }
 
     Ok(true)
@@ -433,6 +454,7 @@ fn scan_chomp<'de>(
 /// Auto-detect the indentation level from the first non
 /// header line of a block scalar
 fn detect_indent_level(
+    opts: Flags,
     buffer: &mut &str,
     stats: &mut MStats,
     cxt: &Context,
@@ -444,9 +466,13 @@ fn detect_indent_level(
 
     loop
     {
+        cache!(~buffer, 1, opts)?;
+
         // Chomp indentation spaces, erroring on a tab
         while isBlank!(~buffer)
         {
+            cache!(~buffer, 1, opts)?;
+
             if check!(~buffer => b'\t')
             {
                 return Err(ScanError::InvalidTab);
@@ -467,6 +493,7 @@ fn detect_indent_level(
         }
 
         // If its not a line break we're done, exit the loop
+        cache!(~buffer, 1, opts)?;
         if !isBreak!(~buffer)
         {
             break;
@@ -489,10 +516,13 @@ fn detect_indent_level(
 
 /// Skip any blanks (and .comments) until we reach a line
 /// ending or non blank character
-fn skip_blanks(buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<()>
+fn skip_blanks(opts: Flags, buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<()>
 {
+    cache!(~buffer, 1, opts)?;
+
     while isBlank!(~buffer)
     {
+        cache!(~buffer, 1, opts)?;
         advance!(*buffer, :stats, 1);
     }
 
@@ -500,6 +530,7 @@ fn skip_blanks(buffer: &mut &str, stats: &mut MStats, comments: bool) -> Result<
     {
         while !isBreakZ!(~buffer)
         {
+            cache!(~buffer, 1, opts)?;
             advance!(*buffer, :stats, 1);
         }
     }
@@ -577,6 +608,7 @@ mod tests
     use ScalarStyle::{Folded, Literal};
 
     use super::*;
+    use crate::scanner::flag::O_ZEROED;
 
     type TestResult = anyhow::Result<()>;
 
@@ -615,7 +647,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("this is a simple block scalar"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -630,7 +662,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("trailing lines...\n"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -645,7 +677,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("trailing lines..."), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -660,7 +692,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("trailing lines...\n\n\n"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -679,7 +711,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("some folded\nlines\nhere\n"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -700,7 +732,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("\n\nsome folded\nlines\nhere"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -721,7 +753,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("some folded\nlines\nhere\n\n\n"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -742,7 +774,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("some folded\nlines\nhere\n\n\n"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -763,7 +795,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("this\n\nhas\n\nbreaks"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -778,7 +810,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("simple block scalar"), Literal);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -795,7 +827,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("this is a simple block scalar"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -810,7 +842,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("trailing lines...\n"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -825,7 +857,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("trailing lines..."), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -840,7 +872,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("trailing lines...\n\n\n"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -859,7 +891,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("some folded lines here\n"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -880,7 +912,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("\n\nsome folded lines here"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -901,7 +933,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("some folded lines here\n\n\n"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -922,7 +954,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("some folded lines here\n\n\n"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -943,7 +975,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("this\nhas\nbreaks"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
@@ -958,7 +990,7 @@ some.other.key: value";
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("simple block scalar"), Folded);
 
-        let (token, _amt) = scan_block_scalar(data, &mut stats, &cxt, !LITERAL)?;
+        let (token, _amt) = scan_block_scalar(O_ZEROED, data, &mut stats, &cxt, !LITERAL)?;
 
         assert_eq!(token, expected);
 
