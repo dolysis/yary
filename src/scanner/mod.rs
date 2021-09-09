@@ -125,6 +125,12 @@ impl Scanner
             return self.fetch_stream_end(*base, tokens);
         }
 
+        // 4 characters is the longest token we can encounter, one
+        // of:
+        //  - '--- '
+        //  - '... '
+        cache!(~base, 4, opts)?;
+
         // Fetch the next token(s)
         match base.as_bytes()
         {
