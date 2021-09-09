@@ -181,7 +181,7 @@ impl Scanner
             [ANCHOR, ..] | [ALIAS, ..] => self.fetch_anchor(base, tokens),
 
             // Is it a tag?
-            [TAG, ..] => self.fetch_tag(base, tokens),
+            [TAG, ..] => self.fetch_tag(opts, base, tokens),
 
             // Is it a block scalar?
             [c @ LITERAL, ..] | [c @ FOLDED, ..] if self.context.is_block() =>
@@ -319,7 +319,12 @@ impl Scanner
         Ok(())
     }
 
-    fn fetch_tag<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>) -> Result<()>
+    fn fetch_tag<'de>(
+        &mut self,
+        opts: Flags,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -331,7 +336,7 @@ impl Scanner
 
         self.save_key(!REQUIRED)?;
 
-        let (token, amt) = scan_node_tag(buffer, &mut stats)?;
+        let (token, amt) = scan_node_tag(opts, buffer, &mut stats)?;
         advance!(buffer, amt);
 
         // A key may not start after a tag (only before)

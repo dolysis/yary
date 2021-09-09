@@ -1,7 +1,10 @@
 //! This module exports function(s) for handling scalar
 //! escapes in YAML documents.
 
-use crate::scanner::error::{ScanError, ScanResult as Result};
+use crate::scanner::{
+    error::{ScanError, ScanResult as Result},
+    flag::Flags,
+};
 
 /// Unescape a given YAML escape sequence as defined in
 /// [Section 5.7][Link]. Specifically, YAML defines 18
@@ -73,6 +76,7 @@ pub(in crate::scanner) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Re
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#ns-uri-char
 pub(in crate::scanner) fn tag_uri_unescape(
+    opts: Flags,
     base: &str,
     scratch: &mut Vec<u8>,
     _directive: bool,
@@ -82,6 +86,8 @@ pub(in crate::scanner) fn tag_uri_unescape(
     let mut codepoint_len: i8 = 0;
 
     while {
+        cache!(~buffer, 3, opts)?;
+
         if buffer.len() < 3
         {
             return Err(ScanError::UnexpectedEOF);

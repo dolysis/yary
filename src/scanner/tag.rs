@@ -66,6 +66,7 @@ use crate::{
     scanner::{
         eat_whitespace,
         error::{ScanError, ScanResult as Result},
+        flag::Flags,
         scalar::escape::tag_uri_unescape,
         stats::MStats,
     },
@@ -79,6 +80,7 @@ use crate::{
 /// possible, but may also copy the directive's handle and
 /// prefix into .scratch if borrowing is not possible.
 pub(in crate::scanner) fn scan_tag_directive<'de>(
+    opts: Flags,
     base: &'de str,
     stats: &mut MStats,
 ) -> Result<(Token<'de>, usize)>
@@ -88,7 +90,7 @@ pub(in crate::scanner) fn scan_tag_directive<'de>(
 
     // %TAG !named! :tag:prefix # a comment\n
     //      ^^^^^^^
-    let (handle, amt) = match scan_tag_handle(buffer, stats)?
+    let (handle, amt) = match scan_tag_handle(opts, buffer, stats)?
     {
         Some((handle, amt)) => (handle.into_inner(), amt),
         None => return Err(ScanError::InvalidTagHandle),
@@ -99,14 +101,15 @@ pub(in crate::scanner) fn scan_tag_directive<'de>(
     //             ^
     // Check that there is >= 1 whitespace between handle and
     // prefix
+    cache!(~buffer, 1, opts)?;
     isBlank!(~buffer, else ScanError::InvalidTagPrefix)?;
 
     // Chomp whitespace to prefix
-    advance!(buffer, eat_whitespace(buffer, stats, false));
+    advance!(buffer, eat_whitespace(opts, buffer, stats, false)?);
 
     // %TAG !named! :tag:prefix # a comment\n
     //              ^^^^^^^^^^^
-    let (prefix, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, false)?;
+    let (prefix, amt) = scan_tag_uri(opts, buffer, stats, &mut can_borrow, false)?;
 
     // %TAG !named! tag-prefix # a comment\n
     //                        ^
@@ -146,6 +149,7 @@ pub(in crate::scanner) fn scan_tag_directive<'de>(
 /// ("!", "") => A non resolving tag
 /// (handle, suffix) => A primary, secondary or named tag
 pub(in crate::scanner) fn scan_node_tag<'de>(
+    opts: Flags,
     base: &'de str,
     stats: &mut MStats,
 ) -> Result<(Token<'de>, usize)>
@@ -163,6 +167,8 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
      * a zero length sub-slice out.
      */
 
+    cache!(~buffer, 2, opts)?;
+
     // !<global:verbatim:tag:> "node"
     // ^^
     // If its a verbatim tag scan it
@@ -172,10 +178,11 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
 
         // !<global:verbatim:tag:> "node"
         //   ^^^^^^^^^^^^^^^^^^^^
-        let (verbatim, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, true)?;
+        let (verbatim, amt) = scan_tag_uri(opts, buffer, stats, &mut can_borrow, true)?;
 
         // !<global:verbatim:tag:> "node"
         //                       ^
+        cache!(~buffer, @amt + 1, 1, opts)?;
         check!(~buffer, amt + 1 => b'>', else ScanError::InvalidTagSuffix)?;
 
         let token = assemble_tag(&buffer[0..0], verbatim, can_borrow);
@@ -185,7 +192,7 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
     // Otherwise scan it as a normal tag
     else
     {
-        match scan_tag_handle(buffer, stats)?
+        match scan_tag_handle(opts, buffer, stats)?
         {
             // ! "node"
             // ^
@@ -200,7 +207,7 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
 
                 // !!global "node" OR !named!global "node"
                 //   ^^^^^^                  ^^^^^^
-                let (suffix, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, false)?;
+                let (suffix, amt) = scan_tag_uri(opts, buffer, stats, &mut can_borrow, false)?;
 
                 let token = assemble_tag(h, suffix, can_borrow);
 
@@ -210,6 +217,8 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
             // Handle scan couldn't find a closing !, meaning this is a local tag
             None =>
             {
+                cache!(~buffer, 1, opts)?;
+
                 // !local "node"
                 // ^
                 let handle = &buffer[..1];
@@ -217,7 +226,7 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
 
                 // !local "node"
                 //  ^^^^^
-                let (suffix, amt) = scan_tag_uri(buffer, stats, &mut can_borrow, false)?;
+                let (suffix, amt) = scan_tag_uri(opts, buffer, stats, &mut can_borrow, false)?;
 
                 let token = assemble_tag(handle, suffix, can_borrow);
 
@@ -240,6 +249,7 @@ pub(in crate::scanner) fn scan_node_tag<'de>(
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#ns-global-tag-prefix
 pub(in crate::scanner) fn scan_tag_uri<'de>(
+    opts: Flags,
     base: &'de str,
     stats: &mut MStats,
     can_borrow: &mut bool,
@@ -251,6 +261,8 @@ pub(in crate::scanner) fn scan_tag_uri<'de>(
 
     loop
     {
+        cache!(~buffer, 1, opts)?;
+
         match buffer.as_bytes()
         {
             // If its a normal allowed character, add it
@@ -293,7 +305,7 @@ pub(in crate::scanner) fn scan_tag_uri<'de>(
 
                     *can_borrow = false;
                 }
-                let amt = tag_uri_unescape(buffer, &mut scratch, true)?;
+                let amt = tag_uri_unescape(opts, buffer, &mut scratch, true)?;
                 advance!(buffer, :stats, amt);
             },
             // EOF before loop end is an error
@@ -320,6 +332,7 @@ pub(in crate::scanner) fn scan_tag_uri<'de>(
 /// Scans a tag handle from .base, attempting to return the
 /// fragment if the handle is unambiguous.
 pub(in crate::scanner) fn scan_tag_handle<'b>(
+    opts: Flags,
     base: &'b str,
     stats: &mut MStats,
 ) -> Result<Option<(TagHandle<'b>, usize)>>
@@ -331,6 +344,7 @@ pub(in crate::scanner) fn scan_tag_handle<'b>(
     // !!tag
     // ^
     // Check that we are indeed starting a handle
+    cache!(~buffer, 1, opts)?;
     check!(~buffer => b'!', else ScanError::InvalidTagHandle)?;
 
     // %TAG !handle! tag-prefix # a comment \n
@@ -338,9 +352,10 @@ pub(in crate::scanner) fn scan_tag_handle<'b>(
     // !handle!tag
     //  ^^^^^^
     // Safety: we just proved above we have >= 1 byte ('!')
-    let name = take_while(buffer[1..].as_bytes(), u8::is_ascii_alphanumeric);
+    let name = take_while(opts, buffer[1..].as_bytes(), u8::is_ascii_alphanumeric)?;
     let mut offset = 1 + name.len();
 
+    cache!(~buffer, @offset, 1, opts)?;
     match buffer.as_bytes().get(offset)
     {
         // If we find a closing '!', then it must either be a secondary or named handle
@@ -391,7 +406,7 @@ impl<'a> TagHandle<'a>
     }
 }
 
-fn take_while<F>(b: &[u8], f: F) -> &[u8]
+fn take_while<F>(opts: Flags, base: &[u8], f: F) -> Result<&[u8]>
 where
     F: Fn(&u8) -> bool,
 {
@@ -399,10 +414,12 @@ where
 
     loop
     {
-        match b.get(index)
+        let i = cache!(base, @index, 1, opts)?;
+
+        match base.get(index)
         {
-            Some(b) if f(b) => index += 1,
-            _ => return &b[..index],
+            Some(b) if f(b) => index += i,
+            _ => return Ok(&base[..index]),
         }
     }
 }
