@@ -290,11 +290,8 @@ impl Scanner
             return Ok(());
         }
 
-        // Reset indent to starting level
-        self.unroll_indent(tokens, STARTING_INDENT)?;
-
-        // Reset saved key
-        self.remove_saved_key()?;
+        // Ensure we can read the 'YAML' or 'TAG' identifiers
+        cache!(~buffer, @1, 4, opts)?;
 
         // Safety: we check above that we have len >= 1 (e.g a '%')
         //
@@ -309,6 +306,12 @@ impl Scanner
 
         // Scan the directive token from the .buffer
         let token = scan_directive(opts, &mut buffer, &mut stats, &kind)?;
+
+        // Reset indent to starting level
+        self.unroll_indent(tokens, STARTING_INDENT)?;
+
+        // Reset saved key
+        self.remove_saved_key()?;
 
         // A key cannot follow a directive (a newline is required)
         self.simple_key_allowed = false;
@@ -339,10 +342,10 @@ impl Scanner
             return Ok(());
         }
 
-        self.save_key(!REQUIRED)?;
-
         let (token, amt) = scan_node_tag(opts, buffer, &mut stats)?;
         advance!(buffer, amt);
+
+        self.save_key(!REQUIRED)?;
 
         // A key may not start after a tag (only before)
         self.simple_key_allowed = false;
@@ -379,11 +382,11 @@ impl Scanner
             _ => return Ok(()),
         };
 
-        // An anchor / alias may start a simple key
-        self.save_key(!REQUIRED)?;
-
         // Scan the token from the .buffer
         let token = scan_anchor(opts, &mut buffer, &mut stats, &kind)?;
+
+        // An anchor / alias may start a simple key
+        self.save_key(!REQUIRED)?;
 
         // A key may not start after an anchor (only before)
         self.simple_key_allowed = false;
@@ -415,10 +418,10 @@ impl Scanner
             return Ok(());
         }
 
-        self.save_key(!REQUIRED)?;
-
         let (range, amt) = scan_flow_scalar(opts, buffer, &mut stats, single)?;
         let token = range.into_token(buffer)?;
+
+        self.save_key(!REQUIRED)?;
 
         // A key cannot follow a flow scalar, as we're either
         // currently in a key (which should be followed by a
@@ -444,9 +447,9 @@ impl Scanner
         let buffer = *base;
         let mut stats = self.stats.clone();
 
-        self.save_key(!REQUIRED)?;
-
         let (token, amt) = scan_plain_scalar(opts, buffer, &mut stats, &self.context)?;
+
+        self.save_key(!REQUIRED)?;
 
         // A simple key cannot follow a plain scalar, there must be
         // an indicator or new line before a key is valid
