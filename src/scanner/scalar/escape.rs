@@ -239,6 +239,7 @@ mod tests
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::scanner::flag::O_ZEROED;
 
     type TestResult = anyhow::Result<()>;
 
@@ -283,7 +284,7 @@ mod tests
         for (i, (&t, &ex)) in data.into_iter().zip(expected).enumerate()
         {
             scratch.clear();
-            flow_unescape(t, scratch)
+            flow_unescape(O_ZEROED, t, scratch)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
             assert_eq!(scratch, ex, "on iteration {}", i)
@@ -344,7 +345,7 @@ mod tests
             let mut c: [u8; 4] = [0; 4];
             scratch.clear();
 
-            flow_unescape(t, scratch)
+            flow_unescape(O_ZEROED, t, scratch)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
             assert_eq!(
@@ -385,7 +386,7 @@ mod tests
         {
             scratch.clear();
 
-            let consumed = flow_unescape(t, scratch)
+            let consumed = flow_unescape(O_ZEROED, t, scratch)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
             assert_eq!(
@@ -432,7 +433,7 @@ mod tests
         {
             scratch.clear();
 
-            let consumed = tag_uri_unescape(t, scratch, true)
+            let consumed = tag_uri_unescape(O_ZEROED, t, scratch, true)
                 .map_err(|e| anyhow!("on iteration {}, test errored with {}", i, e))?;
 
             assert_eq!(
@@ -461,7 +462,7 @@ mod tests
         let scratch = &mut Vec::new();
         let expected = ScanError::UnexpectedEOF;
 
-        match tag_uri_unescape(data, scratch, true)
+        match tag_uri_unescape(O_ZEROED, data, scratch, true)
         {
             Err(e) if e == expected => Ok(()),
 
@@ -481,7 +482,7 @@ mod tests
         let scratch = &mut Vec::new();
         let expected = ScanError::UnknownEscape;
 
-        match tag_uri_unescape(data, scratch, true)
+        match tag_uri_unescape(O_ZEROED, data, scratch, true)
         {
             Err(e) if e == expected => Ok(()),
 
