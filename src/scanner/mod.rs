@@ -8,6 +8,7 @@ mod context;
 mod directive;
 mod entry;
 mod error;
+mod flag;
 mod key;
 mod scalar;
 mod stats;
