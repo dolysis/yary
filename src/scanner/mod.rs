@@ -1121,12 +1121,22 @@ mod tests
     mod tag;
     mod whitespace;
 
+    #[cfg(feature = "test_buffer")]
+    mod str_reader;
+
     use super::*;
     use crate::token::{ScalarStyle::*, Token::*};
 
     struct ScanIter<'de>
     {
-        data:   &'de str,
+        #[cfg(feature = "test_buffer")]
+        data: str_reader::StrReader<'de>,
+        #[cfg(feature = "test_buffer")]
+        opts: Flags,
+
+        #[cfg(not(feature = "test_buffer"))]
+        data: &'de str,
+
         scan:   Scanner,
         tokens: Tokens<'de>,
 
@@ -1138,7 +1148,14 @@ mod tests
         pub fn new(data: &'de str) -> Self
         {
             Self {
+                #[cfg(feature = "test_buffer")]
+                data: str_reader::StrReader::new(data, str_reader::StrReader::BUF_SIZE),
+                #[cfg(feature = "test_buffer")]
+                opts: O_ZEROED | O_EXTENDABLE,
+
+                #[cfg(not(feature = "test_buffer"))]
                 data,
+
                 scan: Scanner::new(),
                 tokens: Tokens::new(),
                 done: false,
@@ -1149,12 +1166,7 @@ mod tests
         {
             if (!self.done) && self.tokens.is_empty()
             {
-                if let 0 = self
-                    .scan
-                    .scan_tokens(O_ZEROED, self.data, &mut self.tokens)?
-                {
-                    self.done = true
-                }
+                self.get_next_token()?;
             }
 
             if !self.done
@@ -1165,6 +1177,52 @@ mod tests
             {
                 Ok(None)
             }
+        }
+
+        #[cfg(feature = "test_buffer")]
+        fn get_next_token(&mut self) -> Result<()>
+        {
+            let count = loop
+            {
+                match self
+                    .scan
+                    .scan_tokens(self.opts, self.data.read(), &mut self.tokens)
+                {
+                    Ok(count) => break count,
+                    Err(e) if e == ScanError::Extend =>
+                    {
+                        self.data.expand(str_reader::StrReader::BUF_EXTEND);
+
+                        if !self.data.expandable()
+                        {
+                            self.opts.remove(O_EXTENDABLE)
+                        }
+
+                        continue;
+                    },
+                    Err(e) => return Err(e),
+                };
+            };
+
+            if count == 0
+            {
+                self.done = true
+            }
+
+            Ok(())
+        }
+
+        #[cfg(not(feature = "test_buffer"))]
+        fn get_next_token(&mut self) -> Result<()>
+        {
+            if let 0 = self
+                .scan
+                .scan_tokens(O_ZEROED, self.data, &mut self.tokens)?
+            {
+                self.done = true
+            }
+
+            Ok(())
         }
     }
 
