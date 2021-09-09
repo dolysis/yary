@@ -18,12 +18,17 @@ use crate::scanner::{
 /// escape sequence.
 ///
 /// [Link]: https://yaml.org/spec/1.2/spec.html#c-escape
-pub(in crate::scanner) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Result<usize>
+pub(in crate::scanner) fn flow_unescape(
+    opts: Flags,
+    base: &str,
+    scratch: &mut Vec<u8>,
+) -> Result<usize>
 {
     let mut buffer = base;
     let mut escape_len: Option<u8> = None;
 
     // Not an escape sequence, early exit
+    cache!(~buffer, 1, opts)?;
     if !check!(~buffer => b'\\')
     {
         return Ok(0);
@@ -33,6 +38,7 @@ pub(in crate::scanner) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Re
 
     // See 5.7: Escaped Characters
     // yaml.org/spec/1.2/spec.html#id2776092
+    cache!(~buffer, 1, opts)?;
     match buffer.as_bytes()
     {
         [b'0', ..] => scratch.push(b'\0'),
@@ -63,6 +69,9 @@ pub(in crate::scanner) fn flow_unescape(base: &str, scratch: &mut Vec<u8>) -> Re
 
     if let Some(sequence) = escape_len
     {
+        // Note that we cache the _entire_ escape sequence before
+        // calling write_unicode_point
+        cache!(~buffer, sequence, opts)?;
         let amt = write_unicode_point(buffer, scratch, sequence)?;
         advance!(buffer, amt);
     }

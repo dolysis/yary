@@ -190,7 +190,7 @@ impl Scanner
             },
 
             // Is it a flow scalar?
-            [SINGLE, ..] | [DOUBLE, ..] => self.fetch_flow_scalar(base, tokens),
+            [SINGLE, ..] | [DOUBLE, ..] => self.fetch_flow_scalar(opts, base, tokens),
 
             // Is it a plain scalar?
             _ if self.is_plain_scalar(*base) => self.fetch_plain_scalar(base, tokens),
@@ -391,6 +391,7 @@ impl Scanner
 
     fn fetch_flow_scalar<'de>(
         &mut self,
+        opts: Flags,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
     ) -> Result<()>
@@ -406,7 +407,7 @@ impl Scanner
 
         self.save_key(!REQUIRED)?;
 
-        let (range, amt) = scan_flow_scalar(buffer, &mut stats, single)?;
+        let (range, amt) = scan_flow_scalar(opts, buffer, &mut stats, single)?;
         let token = range.into_token(buffer)?;
 
         // A key cannot follow a flow scalar, as we're either

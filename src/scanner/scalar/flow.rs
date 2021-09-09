@@ -3,6 +3,7 @@ use std::ops::Range;
 use crate::{
     scanner::{
         error::{ScanError, ScanResult as Result},
+        flag::Flags,
         scalar::escape::flow_unescape,
         stats::MStats,
     },
@@ -15,6 +16,7 @@ use crate::{
 /// the underlying .base, however it may be required to copy
 /// into .scratch and borrow from that lifetime.
 pub(in crate::scanner) fn scan_flow_scalar(
+    opts: Flags,
     base: &str,
     stats: &mut MStats,
     single: bool,
@@ -35,6 +37,7 @@ pub(in crate::scanner) fn scan_flow_scalar(
     };
 
     // Eat left quote
+    cache!(~buffer, 1, opts)?;
     advance!(buffer, :stats, 1);
 
     'scalar: loop
@@ -44,6 +47,7 @@ pub(in crate::scanner) fn scan_flow_scalar(
         // Even in a scalar context, YAML prohibits starting a line
         // with document stream tokens followed by a blank
         // character
+        cache!(~buffer, 4, opts)?;
         if isDocumentIndicator!(~buffer, :stats)
         {
             return Err(ScanError::InvalidFlowScalar);
@@ -55,9 +59,14 @@ pub(in crate::scanner) fn scan_flow_scalar(
             return Err(ScanError::UnexpectedEOF);
         }
 
+        cache!(~buffer, 1, opts)?;
+
         // Consume non whitespace characters
         while !isWhiteSpaceZ!(~buffer)
         {
+            // Longest sequence we can hit is 2 characters ('')
+            cache!(~buffer, 2, opts)?;
+
             // if we encounter an escaped quote we can no longer borrow
             // from .base, we must unescape the quote into .scratch
             if kind == SingleQuote && check!(~buffer => [SINGLE, SINGLE, ..])
@@ -88,7 +97,7 @@ pub(in crate::scanner) fn scan_flow_scalar(
             {
                 set_no_borrow(&mut can_borrow, base, buffer, &mut scratch);
 
-                let read = flow_unescape(buffer, &mut scratch)?;
+                let read = flow_unescape(opts, buffer, &mut scratch)?;
                 advance!(buffer, :stats, read);
             }
             // Its a non blank character, add it
@@ -126,6 +135,8 @@ pub(in crate::scanner) fn scan_flow_scalar(
         // Consume whitespace
         loop
         {
+            cache!(~buffer, 1, opts)?;
+
             match (isBlank!(~buffer), isBreak!(~buffer))
             {
                 // No more whitespace, exit loop
@@ -206,6 +217,7 @@ pub(in crate::scanner) fn scan_flow_scalar(
     };
 
     // Eat the right quote
+    cache!(~buffer, 1, opts)?;
     advance!(buffer, :stats, 1);
 
     let advance = base.len() - buffer.len();
@@ -296,6 +308,7 @@ mod tests
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::scanner::flag::O_ZEROED;
 
     type TestResult = anyhow::Result<()>;
 
@@ -308,7 +321,7 @@ mod tests
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!(""), ScalarStyle::SingleQuote);
 
-        let (range, read) = scan_flow_scalar(data, stats, true)?;
+        let (range, read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
         let scalar = range.into_token(data)?;
 
         assert_eq!(read, 2);
@@ -328,7 +341,7 @@ mod tests
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!("hello world"), ScalarStyle::SingleQuote);
 
-        let (range, read) = scan_flow_scalar(data, stats, true)?;
+        let (range, read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
         let scalar = range.into_token(data)?;
 
         assert_eq!(read, 13);
@@ -352,7 +365,7 @@ fourth'"#;
         let cmp = "first second third fourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, true)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -372,7 +385,7 @@ fourth'"#;
         let cmp = "first second";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, true)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -395,7 +408,7 @@ fourth'"#;
         let cmp = "first second third\nfourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, true)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -417,7 +430,7 @@ fourth'"#;
         {
             stats = MStats::new();
 
-            match scan_flow_scalar(t, &mut stats, true)
+            match scan_flow_scalar(O_ZEROED, t, &mut stats, true)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -443,7 +456,7 @@ fourth'"#;
         {
             stats = MStats::new();
 
-            match scan_flow_scalar(t, &mut stats, true)
+            match scan_flow_scalar(O_ZEROED, t, &mut stats, true)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -467,7 +480,7 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!(""), ScalarStyle::DoubleQuote);
 
-        let (range, read) = scan_flow_scalar(data, stats, false)?;
+        let (range, read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         assert_eq!(read, 2);
@@ -487,7 +500,7 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!("hello world"), ScalarStyle::DoubleQuote);
 
-        let (range, read) = scan_flow_scalar(data, stats, false)?;
+        let (range, read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         assert_eq!(read, 13);
@@ -507,7 +520,7 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!("hello α Ω ッ"), ScalarStyle::DoubleQuote);
 
-        let (range, read) = scan_flow_scalar(data, stats, false)?;
+        let (range, read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -537,7 +550,7 @@ fourth""#;
         let cmp = "first second third fourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, false)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -560,7 +573,7 @@ fourth""#;
         let cmp = "first second third\nfourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, false)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -580,7 +593,7 @@ fourth""#;
         let cmp = "first second";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, false)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
@@ -604,7 +617,7 @@ rst  \
         let cmp = "first  second third\nfourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (range, _read) = scan_flow_scalar(data, stats, false)?;
+        let (range, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
         let scalar = range.into_token(data)?;
 
         if !(scalar == expected)
