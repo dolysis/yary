@@ -186,7 +186,7 @@ impl Scanner
             // Is it a block scalar?
             [c @ LITERAL, ..] | [c @ FOLDED, ..] if self.context.is_block() =>
             {
-                self.fetch_block_scalar(base, tokens, *c == FOLDED)
+                self.fetch_block_scalar(opts, base, tokens, *c == FOLDED)
             },
 
             // Is it a flow scalar?
@@ -458,6 +458,7 @@ impl Scanner
 
     fn fetch_block_scalar<'de>(
         &mut self,
+        opts: Flags,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
         fold: bool,
@@ -473,7 +474,7 @@ impl Scanner
         // always follow a block scalar.
         self.simple_key_allowed = true;
 
-        let (token, amt) = scan_block_scalar(buffer, &mut stats, &self.context, fold)?;
+        let (token, amt) = scan_block_scalar(opts, buffer, &mut stats, &self.context, fold)?;
 
         advance!(*base, amt);
         self.stats = stats;
