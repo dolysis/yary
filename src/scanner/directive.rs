@@ -5,13 +5,14 @@ use super::{
     stats::MStats,
 };
 use crate::{
-    scanner::{eat_whitespace, tag::scan_tag_directive, COMMENTS},
+    scanner::{eat_whitespace, flag::Flags, tag::scan_tag_directive, COMMENTS},
     token::Token,
 };
 
 /// Scans a version or tag directive from .buffer, based on
 /// the .kind of directive, returning the relevant Token.
 pub(in crate::scanner) fn scan_directive<'de>(
+    opts: Flags,
     buffer: &mut &'de str,
     mut stats: &mut MStats,
     kind: &DirectiveKind,
@@ -22,21 +23,25 @@ pub(in crate::scanner) fn scan_directive<'de>(
         DirectiveKind::Version =>
         {
             // Chomp any preceding whitespace
-            advance!(*buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
+            advance!(
+                *buffer,
+                eat_whitespace(opts, buffer, &mut stats, !COMMENTS)?
+            );
 
             // %YAML 1.1
             //       ^
-            let (major, skip) = scan_directive_version(buffer)?;
+            let (major, skip) = scan_directive_version(opts, buffer)?;
             advance!(*buffer, :stats, skip);
 
             // %YAML 1.1
             //        ^
+            cache!(~buffer, 1, opts)?;
             check!(~buffer => b'.', else ScanError::InvalidVersion)?;
             advance!(*buffer, :stats, 1);
 
             // %YAML 1.1
             //         ^
-            let (minor, skip) = scan_directive_version(buffer)?;
+            let (minor, skip) = scan_directive_version(opts, buffer)?;
             advance!(*buffer, :stats, skip);
 
             Ok(Token::VersionDirective(major, minor))
@@ -44,10 +49,13 @@ pub(in crate::scanner) fn scan_directive<'de>(
         DirectiveKind::Tag =>
         {
             // Chomp any spaces up to the handle
-            advance!(*buffer, eat_whitespace(buffer, &mut stats, !COMMENTS));
+            advance!(
+                *buffer,
+                eat_whitespace(opts, buffer, &mut stats, !COMMENTS)?
+            );
 
             // Scan the directive, copying if necessary
-            let (token, amt) = scan_tag_directive(buffer, &mut stats)?;
+            let (token, amt) = scan_tag_directive(opts, buffer, &mut stats)?;
             advance!(*buffer, amt);
 
             Ok(token)
@@ -97,15 +105,15 @@ impl DirectiveKind
     }
 }
 
-fn scan_directive_version(b: &str) -> Result<(u8, usize)>
+fn scan_directive_version(opts: Flags, b: &str) -> Result<(u8, usize)>
 {
-    let v_slice = take_while(b.as_bytes(), u8::is_ascii_digit);
+    let v_slice = take_while(opts, b.as_bytes(), u8::is_ascii_digit)?;
     let v = atoi(v_slice).ok_or(ScanError::InvalidVersion)?;
 
     Ok((v, v_slice.len()))
 }
 
-fn take_while<F>(b: &[u8], f: F) -> &[u8]
+fn take_while<F>(opts: Flags, base: &[u8], f: F) -> Result<&[u8]>
 where
     F: Fn(&u8) -> bool,
 {
@@ -113,10 +121,12 @@ where
 
     loop
     {
-        match b.get(index)
+        let i = cache!(base, @index, 1, opts)?;
+
+        match base.get(index)
         {
-            Some(b) if f(b) => index += 1,
-            _ => return &b[..index],
+            Some(b) if f(b) => index += i,
+            _ => return Ok(&base[..index]),
         }
     }
 }

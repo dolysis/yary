@@ -135,7 +135,7 @@ impl Scanner
         match base.as_bytes()
         {
             // Is it a directive?
-            [DIRECTIVE, ..] if self.stats.column == 0 => self.fetch_directive(base, tokens),
+            [DIRECTIVE, ..] if self.stats.column == 0 => self.fetch_directive(opts, base, tokens),
 
             // Is it a document marker?
             [b @ b'-', b'-', b'-', ..] | [b @ b'.', b'.', b'.', ..]
@@ -270,8 +270,12 @@ impl Scanner
         Ok(())
     }
 
-    fn fetch_directive<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>)
-        -> Result<()>
+    fn fetch_directive<'de>(
+        &mut self,
+        opts: Flags,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         let mut buffer = *base;
         let mut stats = MStats::new();
@@ -299,7 +303,7 @@ impl Scanner
         advance!(buffer, :stats, 1 + kind.len());
 
         // Scan the directive token from the .buffer
-        let token = scan_directive(&mut buffer, &mut stats, &kind)?;
+        let token = scan_directive(opts, &mut buffer, &mut stats, &kind)?;
 
         // A key cannot follow a directive (a newline is required)
         self.simple_key_allowed = false;
