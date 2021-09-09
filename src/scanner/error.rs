@@ -72,6 +72,10 @@ pub enum ScanError
 
     /// An integer overflowed
     IntOverflow,
+
+    /// The underlying buffer should be extended before
+    /// calling the Scanner again
+    Extend,
 }
 
 impl fmt::Display for ScanError
