@@ -83,9 +83,14 @@ impl Scanner
         {
             if let Some(mut buffer) = base.get(self.offset..)
             {
-                self.scan_next_token(opts, &mut buffer, tokens)?;
+                let run = self.scan_next_token(opts, &mut buffer, tokens);
 
-                self.offset = base.len() - buffer.len();
+                if matches!(run, Err(ScanError::Extend) | Ok(_))
+                {
+                    self.offset = base.len() - buffer.len();
+                }
+
+                run?;
 
                 num_tokens = tokens.len() - starting_tokens;
             }
