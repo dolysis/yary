@@ -193,7 +193,7 @@ impl Scanner
             [SINGLE, ..] | [DOUBLE, ..] => self.fetch_flow_scalar(opts, base, tokens),
 
             // Is it a plain scalar?
-            _ if self.is_plain_scalar(*base) => self.fetch_plain_scalar(base, tokens),
+            _ if self.is_plain_scalar(*base) => self.fetch_plain_scalar(opts, base, tokens),
 
             // Otherwise its an error
             _ => return Err(ScanError::UnknownDelimiter),
@@ -431,6 +431,7 @@ impl Scanner
 
     fn fetch_plain_scalar<'de>(
         &mut self,
+        opts: Flags,
         base: &mut &'de str,
         tokens: &mut Tokens<'de>,
     ) -> Result<()>
@@ -440,7 +441,7 @@ impl Scanner
 
         self.save_key(!REQUIRED)?;
 
-        let (token, amt) = scan_plain_scalar(buffer, &mut stats, &self.context)?;
+        let (token, amt) = scan_plain_scalar(opts, buffer, &mut stats, &self.context)?;
 
         // A simple key cannot follow a plain scalar, there must be
         // an indicator or new line before a key is valid

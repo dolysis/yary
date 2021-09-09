@@ -2,6 +2,7 @@ use crate::{
     scanner::{
         context::Context,
         error::{ScanError, ScanResult as Result},
+        flag::Flags,
         stats::MStats,
     },
     token::{ScalarStyle, Token},
@@ -17,6 +18,7 @@ use crate::{
 ///     YAML 1.2: Section 7.3.3
 ///     yaml.org/spec/1.2/spec.html#ns-plain-first(c)
 pub(in crate::scanner) fn scan_plain_scalar<'de>(
+    opts: Flags,
     base: &'de str,
     stats: &mut MStats,
     cxt: &Context,
@@ -53,6 +55,7 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
 
     // Inside flow contexts you *may not* start a plain scalar
     // with a ':', '?', or '-' followed by a flow indicator
+    cache!(~buffer, 2, opts)?;
     if flow_context && check!(~buffer => b':' | b'?' | b'-') && flow_indicator(buffer, 1)
     {
         return Err(ScanError::InvalidPlainScalar);
@@ -60,6 +63,10 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
 
     'scalar: loop
     {
+        // 4 is the largest character sequence we can encounter
+        // (document indicators)
+        cache!(~buffer, 4, opts)?;
+
         if buffer.is_empty()
         {
             break 'scalar;
@@ -110,6 +117,8 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
         // Handle non whitespace characters
         while !isWhiteSpaceZ!(~buffer)
         {
+            cache!(~buffer, 2, opts)?;
+
             if (check!(~buffer => b':') && isWhiteSpaceZ!(~buffer, 1))
                 || flow_context && flow_indicator(buffer, 0)
             {
@@ -128,6 +137,8 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
         // Handle whitespace characters
         loop
         {
+            cache!(~buffer, 1, opts)?;
+
             match (isBlank!(~buffer), isBreak!(~buffer))
             {
                 // No more whitespace, exit loop
@@ -242,6 +253,7 @@ mod tests
     use ScalarStyle::Plain;
 
     use super::*;
+    use crate::scanner::flag::O_ZEROED;
 
     type TestResult = anyhow::Result<()>;
 
@@ -280,7 +292,7 @@ mod tests
 
         for (i, &data) in tests.iter().enumerate()
         {
-            let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)
+            let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)
                 .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
 
             assert_eq!(token, expected, "on iteration {}", i);
@@ -301,7 +313,7 @@ mod tests
 
         for (i, &data) in tests.iter().enumerate()
         {
-            let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)
+            let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)
                 .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
 
             assert_eq!(token, expected, "on iteration {}", i);
@@ -320,7 +332,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!(""), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -339,7 +351,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("hello"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -356,7 +368,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("hello, world!"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -379,7 +391,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("hello this is a multi-line scalar"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -406,7 +418,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("this is\n\na scalar\nwith line#breaks"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -423,7 +435,7 @@ mod tests
         let cxt = cxt!(block -> [0]);
         let expected = Token::Scalar(cow!("hello"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -442,7 +454,7 @@ mod tests
         let cxt = cxt!(flow -> 1);
         let expected = Token::Scalar(cow!("hello"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -461,7 +473,7 @@ mod tests
 
         for (i, &data) in tests.iter().enumerate()
         {
-            let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)
+            let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)
                 .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
 
             assert_eq!(token, expected, "on iteration {}", i);
@@ -485,7 +497,7 @@ string!";
         let cxt = cxt!(flow -> 1);
         let expected = Token::Scalar(cow!("hello this is a multi-line string!"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -514,7 +526,7 @@ breaks
         let cxt = cxt!(flow -> 1);
         let expected = Token::Scalar(cow!("hello this\nbig\nstring\nhas\nline\nbreaks"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -531,7 +543,7 @@ breaks
         let cxt = cxt!(flow -> 1);
         let expected = Token::Scalar(cow!("hello"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -548,7 +560,7 @@ breaks
         let cxt = cxt!(flow -> 1);
         let expected = Token::Scalar(cow!("hello"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
@@ -569,7 +581,7 @@ breaks
         let cxt = cxt!(flow -> 1);
         let expected = Token::Scalar(cow!("hello"), Plain);
 
-        let (token, amt) = scan_plain_scalar(data, &mut stats, &cxt)?;
+        let (token, amt) = scan_plain_scalar(O_ZEROED, data, &mut stats, &cxt)?;
 
         assert_eq!(token, expected);
 
