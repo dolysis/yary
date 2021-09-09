@@ -22,6 +22,7 @@ use crate::{
         directive::{scan_directive, DirectiveKind},
         entry::TokenEntry,
         error::{ScanError, ScanResult as Result},
+        flag::*,
         key::{Key, KeyPossible},
         scalar::{block::scan_block_scalar, flow::scan_flow_scalar, plain::scan_plain_scalar},
         stats::MStats,
@@ -67,7 +68,12 @@ impl Scanner
 
     /// Scan some tokens from the given .base into .tokens
     /// returning the number added.
-    pub fn scan_tokens<'de>(&mut self, base: &'de str, tokens: &mut Tokens<'de>) -> Result<usize>
+    pub fn scan_tokens<'de>(
+        &mut self,
+        opts: Flags,
+        base: &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<usize>
     {
         let mut num_tokens = 0;
         let starting_tokens = tokens.len();
@@ -77,7 +83,7 @@ impl Scanner
         {
             if let Some(mut buffer) = base.get(self.offset..)
             {
-                self.scan_next_token(&mut buffer, tokens)?;
+                self.scan_next_token(opts, &mut buffer, tokens)?;
 
                 self.offset = base.len() - buffer.len();
 
@@ -88,8 +94,12 @@ impl Scanner
         Ok(num_tokens)
     }
 
-    fn scan_next_token<'de>(&mut self, base: &mut &'de str, tokens: &mut Tokens<'de>)
-        -> Result<()>
+    fn scan_next_token<'de>(
+        &mut self,
+        opts: Flags,
+        base: &mut &'de str,
+        tokens: &mut Tokens<'de>,
+    ) -> Result<()>
     {
         // Is it the beginning of the stream?
         if self.state == StreamState::Start
@@ -99,7 +109,7 @@ impl Scanner
         }
 
         // Eat whitespace to the next delimiter
-        self.eat_whitespace(base, COMMENTS);
+        self.eat_whitespace(opts, base, COMMENTS)?;
 
         // Remove any saved key positions that cannot contain keys
         // anymore
@@ -870,11 +880,11 @@ impl Scanner
     /// Chomp whitespace and optionally comments until we
     /// reach the next token, updating buffer[0] to the
     /// beginning of the new token
-    fn eat_whitespace(&mut self, buffer: &mut &str, comments: bool) -> usize
+    fn eat_whitespace(&mut self, opts: Flags, buffer: &mut &str, comments: bool) -> Result<usize>
     {
         let mut stats = MStats::new();
 
-        let amt = eat_whitespace(*buffer, &mut stats, comments);
+        let amt = eat_whitespace(opts, *buffer, &mut stats, comments)?;
 
         // A new line may start a key in the block context
         //
@@ -888,7 +898,7 @@ impl Scanner
         advance!(*buffer, amt);
         self.stats += stats;
 
-        amt
+        Ok(amt)
     }
 }
 
@@ -903,7 +913,7 @@ enum StreamState
 /// Chomp whitespace and .comments if allowed until a non
 /// whitespace character is encountered, returning the
 /// amount chomped
-fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
+fn eat_whitespace(opts: Flags, base: &str, stats: &mut MStats, comments: bool) -> Result<usize>
 {
     let mut buffer = base;
     let mut chomp_line = false;
@@ -911,6 +921,8 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
 
     loop
     {
+        cache!(~buffer, 1, opts)?;
+
         let (blank, brk) = (isBlank!(~buffer), isBreak!(~buffer));
 
         match (blank, brk)
@@ -944,7 +956,7 @@ fn eat_whitespace(base: &str, stats: &mut MStats, comments: bool) -> usize
         }
     }
 
-    base.len() - buffer.len()
+    Ok(base.len() - buffer.len())
 }
 
 /// Roll the indentation level and push a block collection
@@ -1106,7 +1118,9 @@ mod tests
         {
             if (!self.done) && self.tokens.is_empty()
             {
-                if let 0 = self.scan.scan_tokens(self.data, &mut self.tokens)?
+                if let 0 = self
+                    .scan
+                    .scan_tokens(O_ZEROED, self.data, &mut self.tokens)?
                 {
                     self.done = true
                 }

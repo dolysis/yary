@@ -27,7 +27,7 @@ fn eat()
     let mut buffer = data;
     let mut s = Scanner::new();
 
-    s.eat_whitespace(&mut buffer, false);
+    s.eat_whitespace(O_ZEROED, &mut buffer, false).unwrap();
 
     assert_eq!(buffer, "abc");
     assert_eq!(s.stats, (3, 0, 3))
@@ -40,7 +40,7 @@ fn eat_none()
     let mut buffer = data;
     let mut s = Scanner::new();
 
-    s.eat_whitespace(&mut buffer, false);
+    s.eat_whitespace(O_ZEROED, &mut buffer, false).unwrap();
 
     assert_eq!(buffer, "abc");
     assert_eq!(s.stats, (0, 0, 0))
