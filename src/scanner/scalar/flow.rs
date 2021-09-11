@@ -1,7 +1,8 @@
 use crate::{
     scanner::{
+        entry::MaybeToken,
         error::{ScanError, ScanResult as Result},
-        flag::Flags,
+        flag::{Flags, O_EXTENDABLE, O_LAZY},
         scalar::escape::flow_unescape,
         stats::MStats,
     },
@@ -9,11 +10,32 @@ use crate::{
 };
 
 /// Scans a single or double quoted (flow) scalar returning
+/// an opaque handle to a byte slice that could be a valid
+/// scalar.
+///
+/// This function is a wrapper around scan_flow_scalar_eager
+/// and scan_flow_scalar_lazy. See the respective
+/// documentation for an explanation.
+pub(in crate::scanner) fn scan_flow_scalar<'de>(
+    opts: Flags,
+    base: &'de str,
+    stats: &mut MStats,
+    single: bool,
+) -> Result<(MaybeToken<'de>, usize)>
+{
+    match opts.contains(O_LAZY)
+    {
+        true => scan_flow_scalar_lazy(opts, base, stats, single).map(as_maybe),
+        false => scan_flow_scalar_eager(opts, base, stats, single).map(as_maybe),
+    }
+}
+
+/// Scans a single or double quoted (flow) scalar returning
 /// a Token containing the contents, and the amount read
 /// from .base. This function will attempt to borrow from
 /// the underlying .base, however it may be required to copy
 /// into .scratch and borrow from that lifetime.
-pub(in crate::scanner) fn scan_flow_scalar<'de>(
+pub(in crate::scanner) fn scan_flow_scalar_eager<'de>(
     opts: Flags,
     base: &'de str,
     stats: &mut MStats,
@@ -224,6 +246,71 @@ pub(in crate::scanner) fn scan_flow_scalar<'de>(
     Ok((token, advance))
 }
 
+/// Lazily scan a single or double quoted (flow) scalar,
+/// looking for the terminating byte sequence(s). This
+/// function defers any processing of the scalar contents,
+/// including any allocations therein.
+pub(in crate::scanner) fn scan_flow_scalar_lazy<'de>(
+    opts: Flags,
+    base: &'de str,
+    stats: &mut MStats,
+    single: bool,
+) -> Result<(Deferred<'de>, usize)>
+{
+    use ScalarStyle::{DoubleQuote, SingleQuote};
+
+    let mut buffer = base;
+    let base_stats = stats.clone();
+    let kind = match single
+    {
+        true => SingleQuote,
+        false => DoubleQuote,
+    };
+
+    // Eat left quote
+    cache!(~buffer, 1, opts)?;
+    advance!(buffer, :stats, 1);
+
+    loop
+    {
+        // Longest sequence we can hit is 2 characters ('')
+        cache!(~buffer, 2, opts)?;
+
+        if buffer.is_empty()
+        {
+            return Err(ScanError::UnexpectedEOF);
+        }
+
+        // Note we need a branch to catch the double tick, so we
+        // don't accidentally exit before the scalar ends
+        if kind == SingleQuote && check!(~buffer => [SINGLE, SINGLE, ..])
+        {
+            advance!(buffer, :stats, 2);
+        }
+        // We're done, we hit the right quote
+        else if (kind == SingleQuote && check!(~buffer => [SINGLE, ..]))
+            || (kind == DoubleQuote && check!(~buffer => [DOUBLE, ..]))
+        {
+            advance!(buffer, :stats, 1);
+            break;
+        }
+        // Eat the character
+        else
+        {
+            advance!(buffer, :stats, widthOf!(~buffer));
+        }
+    }
+
+    let advance = base.len() - buffer.len();
+    let slice = &base[..advance];
+
+    // Note we remove O_EXTENDABLE as we've already located the
+    // entire scalar
+    let lazy = Deferred::new(opts & !O_EXTENDABLE, slice, base_stats, single);
+
+    Ok((lazy, advance))
+}
+
 // Handles the trap door from borrowing to copying
 fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut Vec<u8>)
 {
@@ -235,6 +322,48 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
     }
 
     *can_borrow = false
+}
+
+// Generic Into<MaybeToken> closure
+fn as_maybe<'de, T>((token, amt): (T, usize)) -> (MaybeToken<'de>, usize)
+where
+    T: Into<MaybeToken<'de>>,
+{
+    (token.into(), amt)
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::scanner) struct Deferred<'de>
+{
+    opts:   Flags,
+    slice:  &'de str,
+    stats:  MStats,
+    single: bool,
+}
+
+impl<'de> Deferred<'de>
+{
+    pub fn new(opts: Flags, slice: &'de str, stats: MStats, single: bool) -> Self
+    {
+        Self {
+            opts,
+            slice,
+            stats,
+            single,
+        }
+    }
+
+    pub fn into_token(self) -> Result<Token<'de>>
+    {
+        let Self {
+            opts,
+            slice,
+            mut stats,
+            single,
+        } = self;
+
+        scan_flow_scalar_eager(opts, slice, &mut stats, single).map(|(t, _)| t)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
