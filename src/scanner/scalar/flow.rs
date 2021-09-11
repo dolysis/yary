@@ -390,6 +390,13 @@ mod tests
 
     type TestResult = anyhow::Result<()>;
 
+    const TEST_OPTS: Flags = O_ZEROED;
+
+    fn normalize<'de>((maybe, amt): (MaybeToken<'de>, usize)) -> Result<(Token<'de>, usize)>
+    {
+        Ok((maybe.into_token()?, amt))
+    }
+
     /* ====== SINGLE QUOTED TESTS ====== */
 
     #[test]
@@ -399,7 +406,7 @@ mod tests
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!(""), ScalarStyle::SingleQuote);
 
-        let (scalar, read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
+        let (scalar, read) = scan_flow_scalar(TEST_OPTS, data, stats, true).and_then(normalize)?;
 
         assert_eq!(read, 2);
 
@@ -418,7 +425,7 @@ mod tests
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!("hello world"), ScalarStyle::SingleQuote);
 
-        let (scalar, read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
+        let (scalar, read) = scan_flow_scalar(TEST_OPTS, data, stats, true).and_then(normalize)?;
 
         assert_eq!(read, 13);
 
@@ -441,7 +448,7 @@ fourth'"#;
         let cmp = "first second third fourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
+        let (scalar, _read) = scan_flow_scalar(TEST_OPTS, data, stats, true).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -460,7 +467,7 @@ fourth'"#;
         let cmp = "first second";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
+        let (scalar, _read) = scan_flow_scalar(TEST_OPTS, data, stats, true).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -482,7 +489,7 @@ fourth'"#;
         let cmp = "first second third\nfourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::SingleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, true)?;
+        let (scalar, _read) = scan_flow_scalar(TEST_OPTS, data, stats, true).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -503,7 +510,7 @@ fourth'"#;
         {
             stats = MStats::new();
 
-            match scan_flow_scalar(O_ZEROED, t, &mut stats, true)
+            match scan_flow_scalar(TEST_OPTS, t, &mut stats, true).and_then(normalize)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -529,7 +536,7 @@ fourth'"#;
         {
             stats = MStats::new();
 
-            match scan_flow_scalar(O_ZEROED, t, &mut stats, true)
+            match scan_flow_scalar(TEST_OPTS, t, &mut stats, true).and_then(normalize)
             {
                 Err(e) => assert_eq!(
                     e, expected,
@@ -553,7 +560,7 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!(""), ScalarStyle::DoubleQuote);
 
-        let (scalar, read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, read) = scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         assert_eq!(read, 2);
 
@@ -572,7 +579,7 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!("hello world"), ScalarStyle::DoubleQuote);
 
-        let (scalar, read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, read) = scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         assert_eq!(read, 13);
 
@@ -591,7 +598,7 @@ fourth'"#;
         let stats = &mut MStats::new();
         let expected = Token::Scalar(cow!("hello α Ω ッ"), ScalarStyle::DoubleQuote);
 
-        let (scalar, read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, read) = scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -620,7 +627,8 @@ fourth""#;
         let cmp = "first second third fourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, _read) =
+            scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -642,7 +650,8 @@ fourth""#;
         let cmp = "first second third\nfourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, _read) =
+            scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -661,7 +670,8 @@ fourth""#;
         let cmp = "first second";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, _read) =
+            scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         if !(scalar == expected)
         {
@@ -684,7 +694,8 @@ rst  \
         let cmp = "first  second third\nfourth";
         let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
 
-        let (scalar, _read) = scan_flow_scalar(O_ZEROED, data, stats, false)?;
+        let (scalar, _read) =
+            scan_flow_scalar(TEST_OPTS, data, stats, false).and_then(normalize)?;
 
         if !(scalar == expected)
         {
