@@ -1,7 +1,10 @@
 use std::cmp::Ordering;
 
 use crate::{
-    scanner::{error::ScanResult as Result, scalar::flow},
+    scanner::{
+        error::ScanResult as Result,
+        scalar::{flow, plain},
+    },
     token::Token,
 };
 
@@ -131,10 +134,21 @@ impl<'de> From<flow::Deferred<'de>> for Lazy<'de>
     }
 }
 
+impl<'de> From<plain::Deferred<'de>> for Lazy<'de>
+{
+    fn from(inner: plain::Deferred<'de>) -> Self
+    {
+        Self {
+            inner: LazyImpl::ScalarP(inner),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum LazyImpl<'de>
 {
     ScalarF(flow::Deferred<'de>),
+    ScalarP(plain::Deferred<'de>),
 }
 
 impl<'de> LazyImpl<'de>
@@ -144,6 +158,7 @@ impl<'de> LazyImpl<'de>
         match self
         {
             Self::ScalarF(inner) => inner.into_token(),
+            Self::ScalarP(inner) => inner.into_token(),
         }
     }
 }
