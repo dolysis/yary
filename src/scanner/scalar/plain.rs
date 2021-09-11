@@ -1,12 +1,32 @@
 use crate::{
     scanner::{
         context::Context,
+        entry::MaybeToken,
         error::{ScanError, ScanResult as Result},
-        flag::Flags,
+        flag::{Flags, O_EXTENDABLE, O_LAZY},
         stats::MStats,
     },
     token::{ScalarStyle, Token},
 };
+
+pub(in crate::scanner) fn scan_plain_scalar<'de>(
+    opts: Flags,
+    base: &'de str,
+    stats: &mut MStats,
+    cxt: &Context,
+) -> Result<(MaybeToken<'de>, usize)>
+{
+    // Ensure the scalar is at least one column above the most
+    // recent indentation level
+    let indent = cxt.indent() + 1;
+    let block_context = cxt.is_block();
+
+    match opts.contains(O_LAZY)
+    {
+        true => scan_plain_scalar_lazy(opts, base, stats, indent, block_context).map(as_maybe),
+        false => scan_plain_scalar_eager(opts, base, stats, indent, block_context).map(as_maybe),
+    }
+}
 
 /// Scans a plain scalar, returning a Token, and the amount
 /// read from .base. This function will attempt to borrow
@@ -17,16 +37,16 @@ use crate::{
 /// See:
 ///     YAML 1.2: Section 7.3.3
 ///     yaml.org/spec/1.2/spec.html#ns-plain-first(c)
-pub(in crate::scanner) fn scan_plain_scalar<'de>(
+pub(in crate::scanner) fn scan_plain_scalar_eager<'de>(
     opts: Flags,
     base: &'de str,
     stats: &mut MStats,
-    cxt: &Context,
+    indent: usize,
+    block_context: bool,
 ) -> Result<(Token<'de>, usize)>
 {
     let mut buffer = base;
     let mut scratch = Vec::new();
-    let indent = cxt.indent() + 1;
 
     // Local copies of the given stats
     let mut local_stats = stats.clone();
@@ -46,12 +66,7 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
     let mut lines: usize = 0;
 
     // Are we in block/flow context?
-    let block_context = cxt.is_block();
     let flow_context = !block_context;
-
-    // Have we hit a flow context scalar end indicator?
-    let flow_indicator =
-        |buffer: &str, at: usize| check!(~buffer, at => b',' | b'[' | b']' | b'{' | b'}');
 
     // Inside flow contexts you *may not* start a plain scalar
     // with a ':', '?', or '-' followed by a flow indicator
@@ -231,6 +246,137 @@ pub(in crate::scanner) fn scan_plain_scalar<'de>(
     Ok((token, advance))
 }
 
+pub(in crate::scanner) fn scan_plain_scalar_lazy<'de>(
+    opts: Flags,
+    base: &'de str,
+    stats: &mut MStats,
+    indent: usize,
+    block_context: bool,
+) -> Result<(Deferred<'de>, usize)>
+{
+    let mut buffer = base;
+
+    let mut local_stats = stats.clone();
+    let mut scalar_stats = stats.clone();
+
+    // Have we hit a lower indentation to our starting indent?
+    let mut outdent = false;
+
+    // Are we in block/flow context?
+    let flow_context = !block_context;
+
+    'scalar: loop
+    {
+        // 4 is the largest character sequence we can encounter
+        // (document indicators)
+        cache!(~buffer, 4, opts)?;
+
+        if buffer.is_empty()
+        {
+            break 'scalar;
+        }
+
+        if outdent
+        {
+            break 'scalar;
+        }
+
+        // A YAML document indicator or ' #' terminates a plain
+        // scalar
+        //
+        // Note that due to how this function is setup, the _only_
+        // times we will hit this guard is if:
+        //
+        // 1. We've just started the function, and thus we were
+        // called on a non whitespace character
+        //
+        // 2. We've gone through the loop, exhausting any
+        // whitespace, thus hitting this guard again
+        //
+        // Therefore just checking for '#' is okay
+        if isDocumentIndicator!(~buffer, :local_stats) || check!(~buffer => b'#')
+        {
+            break 'scalar;
+        }
+
+        // Check for character sequences which end a plain scalar,
+        // namely:
+        //
+        // ': '                         -> anywhere
+        // ',' | '[' | ']' | '{' | '}'  -> flow context
+        if (check!(~buffer => b':') && isWhiteSpaceZ!(~buffer, 1))
+            || flow_context && flow_indicator(buffer, 0)
+        {
+            break 'scalar;
+        }
+
+        // Handle non whitespace characters
+        while !isWhiteSpaceZ!(~buffer)
+        {
+            cache!(~buffer, 2, opts)?;
+
+            if (check!(~buffer => b':') && isWhiteSpaceZ!(~buffer, 1))
+                || flow_context && flow_indicator(buffer, 0)
+            {
+                break;
+            }
+
+            advance!(buffer, :local_stats, 1);
+        }
+        // Save last non whitespace character position
+        scalar_stats = local_stats.clone();
+
+        // Handle whitespace characters
+        loop
+        {
+            cache!(~buffer, 1, opts)?;
+
+            match (isBlank!(~buffer), isBreak!(~buffer))
+            {
+                // No more whitespace, exit loop
+                (false, false) => break,
+                // Handle non break space
+                (true, _) =>
+                {
+                    advance!(buffer, :local_stats, 1);
+                },
+                // Handle line breaks
+                (false, _) =>
+                {
+                    advance!(buffer, :local_stats, @line);
+                },
+            }
+        }
+
+        // If the whitespace ended at a lower indent, then we're
+        // done, and should exit on the next loop
+        outdent = block_context && local_stats.column < indent;
+    }
+
+    let advance = scalar_stats.read - stats.read;
+    let slice = &base[..advance];
+
+    // Note we remove O_EXTENDABLE as we've already located the
+    // entire scalar
+    let lazy = Deferred::new(
+        opts & !O_EXTENDABLE,
+        slice,
+        stats.clone(),
+        indent,
+        block_context,
+    );
+
+    *stats = scalar_stats;
+
+    Ok((lazy, advance))
+}
+
+/// Have we hit a flow context scalar end indicator?
+fn flow_indicator(buffer: &str, offset: usize) -> bool
+{
+    check!(~buffer, offset => b',' | b'[' | b']' | b'{' | b'}')
+}
+
 /// Handles the trap door from borrowing to copying
 fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut Vec<u8>)
 {
@@ -240,6 +386,57 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
     }
 
     *can_borrow = false
+}
+
+// Generic Into<MaybeToken> closure
+fn as_maybe<'de, T>((token, amt): (T, usize)) -> (MaybeToken<'de>, usize)
+where
+    T: Into<MaybeToken<'de>>,
+{
+    (token.into(), amt)
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::scanner) struct Deferred<'de>
+{
+    opts:          Flags,
+    slice:         &'de str,
+    stats:         MStats,
+    indent:        usize,
+    block_context: bool,
+}
+
+impl<'de> Deferred<'de>
+{
+    pub fn new(
+        opts: Flags,
+        slice: &'de str,
+        stats: MStats,
+        indent: usize,
+        block_context: bool,
+    ) -> Self
+    {
+        Self {
+            opts,
+            slice,
+            stats,
+            indent,
+            block_context,
+        }
+    }
+
+    pub fn into_token(self) -> Result<Token<'de>>
+    {
+        let Deferred {
+            opts,
+            slice,
+            mut stats,
+            indent,
+            block_context,
+        } = self;
+
+        scan_plain_scalar_eager(opts, slice, &mut stats, indent, block_context).map(|(t, _)| t)
+    }
 }
 
 const SPACE: u8 = b' ';
