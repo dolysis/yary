@@ -1170,7 +1170,7 @@ mod tests
 
             if !self.done
             {
-                Ok(self.tokens.pop().map(|e| e.into_token()))
+                self.tokens.pop().map(|e| e.into_token()).transpose()
             }
             else
             {
