@@ -4,6 +4,7 @@ use crate::{
         entry::MaybeToken,
         error::{ScanError, ScanResult as Result},
         flag::{Flags, O_EXTENDABLE, O_LAZY},
+        scalar::as_maybe,
         stats::MStats,
     },
     token::{ScalarStyle, Token},
@@ -388,14 +389,6 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
     *can_borrow = false
 }
 
-// Generic Into<MaybeToken> closure
-fn as_maybe<'de, T>((token, amt): (T, usize)) -> (MaybeToken<'de>, usize)
-where
-    T: Into<MaybeToken<'de>>,
-{
-    (token.into(), amt)
-}
-
 #[derive(Debug, Clone)]
 pub(in crate::scanner) struct Deferred<'de>
 {
@@ -450,11 +443,7 @@ mod tests
     use ScalarStyle::Plain;
 
     use super::*;
-    use crate::scanner::flag::O_ZEROED;
-
-    type TestResult = anyhow::Result<()>;
-
-    const TEST_OPTS: Flags = O_ZEROED;
+    use crate::scanner::scalar::test_utils::{normalize, TestResult, TEST_OPTS};
 
     macro_rules! cxt {
         (flow -> $level:expr) => {
@@ -479,11 +468,6 @@ mod tests
         (@blk $cxt:expr, $indent:expr) => {
             $cxt.indent_increment($indent, 0, true).unwrap()
         }
-    }
-
-    fn normalize<'de>((maybe, amt): (MaybeToken<'de>, usize)) -> Result<(Token<'de>, usize)>
-    {
-        Ok((maybe.into_token()?, amt))
     }
 
     #[test]

@@ -3,7 +3,7 @@ use crate::{
         entry::MaybeToken,
         error::{ScanError, ScanResult as Result},
         flag::{Flags, O_EXTENDABLE, O_LAZY},
-        scalar::escape::flow_unescape,
+        scalar::{as_maybe, escape::flow_unescape},
         stats::MStats,
     },
     token::{ScalarStyle, Token},
@@ -324,14 +324,6 @@ fn set_no_borrow(can_borrow: &mut bool, base: &str, buffer: &str, scratch: &mut 
     *can_borrow = false
 }
 
-// Generic Into<MaybeToken> closure
-fn as_maybe<'de, T>((token, amt): (T, usize)) -> (MaybeToken<'de>, usize)
-where
-    T: Into<MaybeToken<'de>>,
-{
-    (token.into(), amt)
-}
-
 #[derive(Debug, Clone)]
 pub(in crate::scanner) struct Deferred<'de>
 {
@@ -386,16 +378,7 @@ mod tests
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::scanner::flag::O_ZEROED;
-
-    type TestResult = anyhow::Result<()>;
-
-    const TEST_OPTS: Flags = O_ZEROED;
-
-    fn normalize<'de>((maybe, amt): (MaybeToken<'de>, usize)) -> Result<(Token<'de>, usize)>
-    {
-        Ok((maybe.into_token()?, amt))
-    }
+    use crate::scanner::scalar::test_utils::{normalize, TestResult, TEST_OPTS};
 
     /* ====== SINGLE QUOTED TESTS ====== */
 
