@@ -25,13 +25,30 @@ use atoi::atoi;
 use crate::{
     scanner::{
         context::Context,
+        entry::MaybeToken,
         error::{ScanError, ScanResult as Result},
-        flag::Flags,
+        flag::{Flags, O_LAZY},
         stats::MStats,
     },
     token::{ScalarStyle, Slice, Token},
 };
 
+pub(in crate::scanner) fn scan_block_scalar<'de>(
+    opts: Flags,
+    base: &'de str,
+    stats: &mut MStats,
+    cxt: &Context,
+    fold: bool,
+) -> Result<(MaybeToken<'de>, usize)>
+{
+    let indent = cxt.indent() + 0;
+
+    match opts.contains(O_LAZY)
+    {
+        true => scan_block_scalar_lazy(opts, base, stats, indent, fold).map(as_maybe),
+        false => scan_block_scalar_eager(opts, base, stats, indent, fold).map(as_maybe),
+    }
+}
 /// Scans a block scalar, returning a Token and the amount
 /// read from .base. This function will attempt to borrow
 /// from .base, however the circumstances in which it
@@ -40,11 +57,11 @@ use crate::{
 /// See:
 ///     YAML 1.2: Section 8.1
 ///     yaml.org/spec/1.2/#c-b-block-header(m,t)
-pub(in crate::scanner) fn scan_block_scalar<'de>(
+pub(in crate::scanner) fn scan_block_scalar_eager<'de>(
     opts: Flags,
     base: &'de str,
     stats: &mut MStats,
-    cxt: &Context,
+    base_indent: usize,
     fold: bool,
 ) -> Result<(Token<'de>, usize)>
 {
@@ -102,14 +119,14 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
     // from the indentation level
     match explicit.map(NonZeroU8::get)
     {
-        Some(explicit) => indent = cxt.indent() + explicit as usize,
+        Some(explicit) => indent = base_indent + explicit as usize,
         None =>
         {
             indent = detect_indent_level(
                 opts,
                 &mut buffer,
                 &mut local_stats,
-                cxt,
+                base_indent,
                 &mut lines,
                 &mut can_borrow,
             )?
@@ -253,6 +270,100 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
     let token = Token::Scalar(scalar, style);
 
     Ok((token, advance))
+}
+
+pub(in crate::scanner) fn scan_block_scalar_lazy<'de>(
+    opts: Flags,
+    base: &'de str,
+    stats: &mut MStats,
+    base_indent: usize,
+    fold: bool,
+) -> Result<(Deferred<'de>, usize)>
+{
+    // Initialize the local state handlers
+    let mut buffer = base;
+    let mut local_stats = stats.clone();
+
+    // The indentation level of this scalar
+    let indent: usize;
+
+    // Eat the '|' or '>'
+    cache!(~buffer, 1, opts)?;
+    advance!(buffer, :local_stats, 1);
+
+    // Calculate any headers this scalar may have
+    let (_, explicit) = scan_headers(opts, &mut buffer, &mut local_stats)?;
+
+    // The header line must contain nothing after the headers
+    // excluding a comment until the line ending
+    skip_blanks(opts, &mut buffer, &mut local_stats, COMMENTS)?;
+    cache!(~buffer, 1, opts)?;
+    if !isWhiteSpaceZ!(~buffer)
+    {
+        return Err(ScanError::InvalidBlockScalar);
+    }
+
+    // Eat the line break
+    advance!(buffer, :local_stats, @line);
+
+    // Set the indent explicitly if defined, otherwise detect
+    // from the indentation level
+    match explicit.map(NonZeroU8::get)
+    {
+        Some(explicit) => indent = base_indent + explicit as usize,
+        None =>
+        {
+            indent = detect_indent_level(
+                opts,
+                &mut buffer,
+                &mut local_stats,
+                base_indent,
+                &mut 0,
+                &mut false,
+            )?
+        },
+    }
+
+    while local_stats.column == indent && (!buffer.is_empty())
+    {
+        /*
+         * We're at the start of an indented line
+         */
+
+        // Eat the line's content until the line break (or EOF)
+        cache!(~buffer, 1, opts)?;
+        while !isBreakZ!(~buffer)
+        {
+            cache!(~buffer, 1, opts)?;
+            advance!(buffer, :local_stats, 1);
+        }
+
+        // Eat the line break (if not EOF)
+        cache!(~buffer, 1, opts)?;
+        if isBreak!(~buffer)
+        {
+            advance!(buffer, :local_stats, @line);
+        }
+
+        // Chomp indentation until the next indented line
+        scan_indent(
+            opts,
+            &mut buffer,
+            &mut local_stats,
+            &mut 0,
+            &mut false,
+            indent,
+        )?;
+    }
+
+    let advance = base.len() - buffer.len();
+    let slice = &base[..advance];
+
+    let lazy = Deferred::new(opts, slice, stats.clone(), base_indent, fold);
+
+    *stats = local_stats;
+
+    Ok((lazy, advance))
 }
 
 /// Retrieve a block scalar's headers
@@ -457,7 +568,7 @@ fn detect_indent_level(
     opts: Flags,
     buffer: &mut &str,
     stats: &mut MStats,
-    cxt: &Context,
+    base_indent: usize,
     lines: &mut usize,
     can_borrow: &mut bool,
 ) -> Result<usize>
@@ -506,9 +617,9 @@ fn detect_indent_level(
 
     // Note that we must set the lower bound of the indentation
     // level, in case the YAML is invalid
-    if indent < cxt.indent() + 1
+    if indent < base_indent + 1
     {
-        indent = cxt.indent() + 1
+        indent = base_indent + 1
     }
 
     Ok(indent)
@@ -590,6 +701,51 @@ impl ChompParams
             end,
             lines,
         }
+    }
+}
+
+// Generic Into<MaybeToken> closure
+fn as_maybe<'de, T>((token, amt): (T, usize)) -> (MaybeToken<'de>, usize)
+where
+    T: Into<MaybeToken<'de>>,
+{
+    (token.into(), amt)
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::scanner) struct Deferred<'de>
+{
+    opts:   Flags,
+    slice:  &'de str,
+    stats:  MStats,
+    indent: usize,
+    fold:   bool,
+}
+
+impl<'de> Deferred<'de>
+{
+    pub fn new(opts: Flags, slice: &'de str, stats: MStats, indent: usize, fold: bool) -> Self
+    {
+        Self {
+            opts,
+            slice,
+            stats,
+            indent,
+            fold,
+        }
+    }
+
+    pub fn into_token(self) -> Result<Token<'de>>
+    {
+        let Deferred {
+            opts,
+            slice,
+            mut stats,
+            indent,
+            fold,
+        } = self;
+
+        scan_block_scalar_eager(opts, slice, &mut stats, indent, fold).map(|(t, _)| t)
     }
 }
 
