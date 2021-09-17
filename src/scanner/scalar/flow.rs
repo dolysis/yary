@@ -273,7 +273,7 @@ pub(in crate::scanner) fn scan_flow_scalar_lazy<'de>(
 
     loop
     {
-        // Longest sequence we can hit is 2 characters ('')
+        // Longest sequence we can hit is 2 characters ('' or \")
         cache!(~buffer, 2, opts)?;
 
         if buffer.is_empty()
@@ -281,9 +281,10 @@ pub(in crate::scanner) fn scan_flow_scalar_lazy<'de>(
             return Err(ScanError::UnexpectedEOF);
         }
 
-        // Note we need a branch to catch the double tick, so we
-        // don't accidentally exit before the scalar ends
-        if kind == SingleQuote && check!(~buffer => [SINGLE, SINGLE, ..])
+        // Check for either of the quote escapes, skipping them if
+        // found
+        if (kind == SingleQuote && check!(~buffer => [SINGLE, SINGLE, ..]))
+            || (kind == DoubleQuote && check!(~buffer => [BACKSLASH, DOUBLE, ..]))
         {
             advance!(buffer, :stats, 2);
         }
@@ -295,6 +296,10 @@ pub(in crate::scanner) fn scan_flow_scalar_lazy<'de>(
             break;
         }
         // Eat the character
+        else if isBreak!(~buffer)
+        {
+            advance!(buffer, :stats, @line);
+        }
         else
         {
             advance!(buffer, :stats, widthOf!(~buffer));
