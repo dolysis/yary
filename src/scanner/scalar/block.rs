@@ -1,8 +1,20 @@
 //! This module contains the functions responsible for
 //! scanning block scalars into Tokens.
 //!
-//! It exports a single function, scan_block_scalar which
-//! provides the top level interface of this functionality.
+//! It exports 3 functions:
+//!
+//! - scan_block_scalar
+//! - scan_block_scalar_eager
+//! - scan_block_scalar_lazy
+//!
+//! The eager variant produces a scalar Token (or an error)
+//! that may allocate and performs any processing the YAML
+//! spec requires. The lazy variant instead defers any
+//! processing, returning a structure that can process the
+//! scalar at a later time.
+//!
+//! scan_block_scalar provides the top level interface of
+//! this functionality.
 //!
 //! Two further functions are notable: scan_indent and
 //! scan_chomp.
@@ -34,6 +46,12 @@ use crate::{
     token::{ScalarStyle, Slice, Token},
 };
 
+/// Scans a block scalar returning an opaque handle to a
+/// byte slice that could be a valid scalar.
+///
+/// This function is a wrapper around
+/// scan_block_scalar_eager and scan_block_scalar_lazy. See
+/// the respective documentation for an explanation.
 pub(in crate::scanner) fn scan_block_scalar<'de>(
     opts: Flags,
     base: &'de str,
