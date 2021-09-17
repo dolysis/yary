@@ -8,6 +8,7 @@ edition = "2018"
 
 [features]
 # PRIVATE! FOR USE IN TEST ONLY!
+test_lazy = []
 test_buffer = []
 test_buffer_large = ["test_buffer"]
 test_buffer_medium = ["test_buffer"]
