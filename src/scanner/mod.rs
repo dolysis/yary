@@ -1132,12 +1132,11 @@ mod tests
     {
         #[cfg(feature = "test_buffer")]
         data: str_reader::StrReader<'de>,
-        #[cfg(feature = "test_buffer")]
-        opts: Flags,
 
         #[cfg(not(feature = "test_buffer"))]
         data: &'de str,
 
+        opts:   Flags,
         scan:   Scanner,
         tokens: Tokens<'de>,
 
@@ -1151,12 +1150,11 @@ mod tests
             Self {
                 #[cfg(feature = "test_buffer")]
                 data: str_reader::StrReader::new(data, str_reader::StrReader::BUF_SIZE),
-                #[cfg(feature = "test_buffer")]
-                opts: O_ZEROED | O_EXTENDABLE,
 
                 #[cfg(not(feature = "test_buffer"))]
                 data,
 
+                opts: TEST_FLAGS,
                 scan: Scanner::new(),
                 tokens: Tokens::new(),
                 done: false,
@@ -1218,7 +1216,7 @@ mod tests
         {
             if let 0 = self
                 .scan
-                .scan_tokens(O_ZEROED, self.data, &mut self.tokens)?
+                .scan_tokens(self.opts, self.data, &mut self.tokens)?
             {
                 self.done = true
             }
