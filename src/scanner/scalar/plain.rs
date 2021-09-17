@@ -319,7 +319,16 @@ pub(in crate::scanner) fn scan_plain_scalar_lazy<'de>(
             if (check!(~buffer => b':') && isWhiteSpaceZ!(~buffer, 1))
                 || flow_context && flow_indicator(buffer, 0)
             {
-                break;
+                let skip = match isWhiteSpace!(~buffer, 1)
+                {
+                    true => 2,
+                    false => 1,
+                };
+
+                scalar_stats = local_stats.clone();
+                local_stats.update(skip, 0, skip);
+
+                break 'scalar;
             }
 
             advance!(buffer, :local_stats, 1);
@@ -354,8 +363,21 @@ pub(in crate::scanner) fn scan_plain_scalar_lazy<'de>(
         outdent = block_context && local_stats.column < indent;
     }
 
+    /*
+     * Note the two different offsets calculated:
+     *
+     * - advance => how much the Scanner should advance into
+     *   .base
+     * - boundary => the maximum bytes required for _eager to
+     *   correctly parse the scalar
+     *
+     * Its easy to confuse these, and doing so will lead to
+     * strange errors
+     */
     let advance = scalar_stats.read - stats.read;
-    let slice = &base[..advance];
+    let boundary = local_stats.read - stats.read;
+
+    let slice = &base[..boundary];
 
     // Note we remove O_EXTENDABLE as we've already located the
     // entire scalar
