@@ -1,3 +1,9 @@
+/*
+ * This Source Code Form is subject to the terms of the
+ * Mozilla Public License, v. 2.0. If a copy of the MPL
+ * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
 //! Test cases that contain any combination of valid YAML
 //! tokens. Typically any tests that are closer to YAML
 //! documents rather than specific fragments belong here, or

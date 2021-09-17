@@ -1,3 +1,9 @@
+/*
+ * This Source Code Form is subject to the terms of the
+ * Mozilla Public License, v. 2.0. If a copy of the MPL
+ * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
 //! Test cases for block and flow collections specifically.
 //! Note that many other token types are used in this module
 //! due to the nature of collections.
