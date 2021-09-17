@@ -443,7 +443,7 @@ mod tests
     use ScalarStyle::Plain;
 
     use super::*;
-    use crate::scanner::scalar::test_utils::{normalize, TestResult, TEST_OPTS};
+    use crate::scanner::scalar::test_utils::{normalize, TestResult, TEST_FLAGS};
 
     macro_rules! cxt {
         (flow -> $level:expr) => {
@@ -480,7 +480,7 @@ mod tests
 
         for (i, &data) in tests.iter().enumerate()
         {
-            let (token, amt) = scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt)
+            let (token, amt) = scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt)
                 .and_then(normalize)
                 .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
 
@@ -502,7 +502,7 @@ mod tests
 
         for (i, &data) in tests.iter().enumerate()
         {
-            let (token, amt) = scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt)
+            let (token, amt) = scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt)
                 .and_then(normalize)
                 .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
 
@@ -523,7 +523,7 @@ mod tests
         let expected = Token::Scalar(cow!(""), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -543,7 +543,7 @@ mod tests
         let expected = Token::Scalar(cow!("hello"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -561,7 +561,7 @@ mod tests
         let expected = Token::Scalar(cow!("hello, world!"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -585,7 +585,7 @@ mod tests
         let expected = Token::Scalar(cow!("hello this is a multi-line scalar"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -613,7 +613,7 @@ mod tests
         let expected = Token::Scalar(cow!("this is\n\na scalar\nwith line#breaks"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -631,7 +631,7 @@ mod tests
         let expected = Token::Scalar(cow!("hello"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -651,7 +651,7 @@ mod tests
         let expected = Token::Scalar(cow!("hello"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -670,7 +670,7 @@ mod tests
 
         for (i, &data) in tests.iter().enumerate()
         {
-            let (token, amt) = scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt)
+            let (token, amt) = scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt)
                 .and_then(normalize)
                 .map_err(|e| anyhow!("iteration {}: {}", i, e))?;
 
@@ -696,7 +696,7 @@ string!";
         let expected = Token::Scalar(cow!("hello this is a multi-line string!"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -726,7 +726,7 @@ breaks
         let expected = Token::Scalar(cow!("hello this\nbig\nstring\nhas\nline\nbreaks"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -744,7 +744,7 @@ breaks
         let expected = Token::Scalar(cow!("hello"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -762,7 +762,7 @@ breaks
         let expected = Token::Scalar(cow!("hello"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -784,7 +784,7 @@ breaks
         let expected = Token::Scalar(cow!("hello"), Plain);
 
         let (token, amt) =
-            scan_plain_scalar(TEST_OPTS, data, &mut stats, &cxt).and_then(normalize)?;
+            scan_plain_scalar(TEST_FLAGS, data, &mut stats, &cxt).and_then(normalize)?;
 
         assert_eq!(token, expected);
 

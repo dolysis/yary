@@ -20,14 +20,17 @@ mod test_utils
         scanner::{
             entry::MaybeToken,
             error::ScanResult as Result,
-            flag::{self, Flags},
+            flag::{Flags, O_EXTENDABLE},
+            tests::TEST_FLAGS as PARENT_FLAGS,
         },
         token::Token,
     };
 
     pub(super) type TestResult = anyhow::Result<()>;
 
-    pub(super) const TEST_OPTS: Flags = flag::O_ZEROED;
+    // Note we expressly remove O_EXTENDABLE, as the tests in
+    // this module are not designed to handle Extend errors.
+    pub(super) const TEST_FLAGS: Flags = PARENT_FLAGS.difference(O_EXTENDABLE);
 
     /// Process any deferred Tokens
     pub(super) fn normalize<'de>(
