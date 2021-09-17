@@ -42,7 +42,10 @@ pub(in crate::scanner) fn scan_block_scalar<'de>(
     fold: bool,
 ) -> Result<(MaybeToken<'de>, usize)>
 {
-    let indent = cxt.indent() + 0;
+    // It is safe to assume our indentation level is >=0 here
+    // because block scalars can only occur as mapping or
+    // sequence values
+    let indent = cxt.indent().as_usize();
 
     match opts.contains(O_LAZY)
     {

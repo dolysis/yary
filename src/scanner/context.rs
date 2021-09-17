@@ -219,6 +219,23 @@ impl IndentEntry
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::scanner) struct Indent(Option<usize>);
 
+impl Indent
+{
+    /// Converts the Indent to the closest usize possible
+    ///
+    /// Typically this isn't an issue, but an Indent may
+    /// represent the '-1th' indent of a YAML stream. In
+    /// this case, this function returns 0 instead.
+    ///
+    /// Only call this function for indentation related uses
+    /// if you've already ensured that indent
+    /// is >=0; e.g while parsing a mapping value.
+    pub fn as_usize(self) -> usize
+    {
+        self.0.unwrap_or(0)
+    }
+}
+
 impl From<usize> for Indent
 {
     fn from(indent: usize) -> Self
