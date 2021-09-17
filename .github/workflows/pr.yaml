@@ -23,9 +23,15 @@ jobs:
           - name: "Unit Tests"
             cmd: test
             args: --lib --bins
+          - name: "Unit Tests: feature.test_lazy"
+            cmd: test
+            args: --lib --features=test_lazy
           - name: "Unit Tests: feature.test_buffer_small"
             cmd: test
             args: --lib --features=test_buffer_small
+          - name: "Unit Tests: feature.test_buffer_small,test_lazy"
+            cmd: test
+            args: --lib --features=test_buffer_small,test_lazy
         include:
           - os: ubuntu-latest
             sccache-path: /home/runner/.cache/sccache
