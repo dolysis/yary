@@ -698,4 +698,23 @@ rst  \
 
         Ok(())
     }
+
+    #[test]
+    fn flow_double_escape_quote() -> TestResult
+    {
+        let data = r#""a quote \" here""#;
+        let stats = &mut MStats::new();
+        let cmp = "a quote \" here";
+        let expected = Token::Scalar(cow!(cmp), ScalarStyle::DoubleQuote);
+
+        let (scalar, _read) =
+            scan_flow_scalar(TEST_FLAGS, data, stats, false).and_then(normalize)?;
+
+        if !(scalar == expected)
+        {
+            bail!("\nexpected: {:?}\nbut got: {:?}", expected, &scalar)
+        }
+
+        Ok(())
+    }
 }
