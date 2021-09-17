@@ -760,7 +760,7 @@ mod tests
     use ScalarStyle::{Folded, Literal};
 
     use super::*;
-    use crate::scanner::scalar::test_utils::{normalize, TestResult, TEST_OPTS};
+    use crate::scanner::scalar::test_utils::{normalize, TestResult, TEST_FLAGS};
 
     macro_rules! cxt {
         (flow -> $level:expr) => {
@@ -798,7 +798,7 @@ mod tests
         let expected = Token::Scalar(cow!("this is a simple block scalar"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -814,7 +814,7 @@ mod tests
         let expected = Token::Scalar(cow!("trailing lines...\n"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -830,7 +830,7 @@ mod tests
         let expected = Token::Scalar(cow!("trailing lines..."), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -846,7 +846,7 @@ mod tests
         let expected = Token::Scalar(cow!("trailing lines...\n\n\n"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -866,7 +866,7 @@ mod tests
         let expected = Token::Scalar(cow!("some folded\nlines\nhere\n"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -888,7 +888,7 @@ mod tests
         let expected = Token::Scalar(cow!("\n\nsome folded\nlines\nhere"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -910,7 +910,7 @@ mod tests
         let expected = Token::Scalar(cow!("some folded\nlines\nhere\n\n\n"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -932,7 +932,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("some folded\nlines\nhere\n\n\n"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -954,7 +954,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("this\n\nhas\n\nbreaks"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -970,7 +970,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("simple block scalar"), Literal);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -988,7 +988,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("this is a simple block scalar"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1004,7 +1004,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("trailing lines...\n"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1020,7 +1020,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("trailing lines..."), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1036,7 +1036,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("trailing lines...\n\n\n"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1056,7 +1056,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("some folded lines here\n"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1078,7 +1078,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("\n\nsome folded lines here"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1100,7 +1100,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("some folded lines here\n\n\n"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1122,7 +1122,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("some folded lines here\n\n\n"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1144,7 +1144,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("this\nhas\nbreaks"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
@@ -1160,7 +1160,7 @@ some.other.key: value";
         let expected = Token::Scalar(cow!("simple block scalar"), Folded);
 
         let (token, _amt) =
-            scan_block_scalar(TEST_OPTS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
+            scan_block_scalar(TEST_FLAGS, data, &mut stats, &cxt, !LITERAL).and_then(normalize)?;
 
         assert_eq!(token, expected);
 
