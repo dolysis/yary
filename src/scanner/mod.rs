@@ -1126,6 +1126,8 @@ mod tests
     use super::*;
     use crate::token::{ScalarStyle::*, Token::*};
 
+    pub(in crate::scanner) const TEST_FLAGS: Flags = test_flags();
+
     struct ScanIter<'de>
     {
         #[cfg(feature = "test_buffer")]
@@ -1270,5 +1272,23 @@ mod tests
         }
 
         stats
+    }
+
+    const fn test_flags() -> Flags
+    {
+        #[allow(unused_mut)]
+        let mut flags = O_ZEROED;
+
+        if cfg!(feature = "test_buffer")
+        {
+            flags = flags.union(O_EXTENDABLE)
+        }
+
+        if cfg!(feature = "test_lazy")
+        {
+            flags = flags.union(O_LAZY)
+        }
+
+        flags
     }
 }
