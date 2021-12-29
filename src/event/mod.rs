@@ -1311,11 +1311,18 @@ const NO_TAG: Option<(Slice<'static>, Slice<'static>)> = None;
 #[cfg(test)]
 mod tests
 {
+    use pretty_assertions::assert_eq;
+
     use super::*;
-    use crate::reader::borrow::BorrowReader;
+    use crate::{
+        reader::borrow::BorrowReader,
+        token::{ScalarStyle::*, StreamEncoding, Token::*},
+    };
 
     #[macro_use]
     mod macros;
+
+    type TestResult<'a> = Result<Event<'a>>;
 
     struct ParseIter<'de>
     {
@@ -1347,5 +1354,588 @@ mod tests
         {
             self.next_event().transpose()
         }
+    }
+
+    #[test]
+    fn empty()
+    {
+        let tokens = tokens![StreamStart(StreamEncoding::UTF8), StreamEnd];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        )
+    }
+
+    #[test]
+    fn empty_document()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            DocumentStart,
+            DocumentEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart @explicit }),
+            | event!({ DocumentEnd @explicit }),
+            | event!({ StreamEnd}),
+            @ None
+        )
+    }
+
+    #[test]
+    fn simple_scalar()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            Scalar(cow!("Scalar only YAML document"), SingleQuote),
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ Scalar node!(scalar!("Scalar only YAML document", SingleQuote), @Root) }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn simple_sequence()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            BlockSequenceStart,
+            BlockEntry,
+            Scalar(cow!("Entry #1"), DoubleQuote),
+            BlockEntry,
+            Scalar(cow!("Entry #2"), DoubleQuote),
+            BlockEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ SequenceStart @Root }),
+            | event!({ Scalar node!(scalar!("Entry #1", DoubleQuote), @Entry) }),
+            | event!({ Scalar node!(scalar!("Entry #2", DoubleQuote), @Entry) }),
+            | event!({ SequenceEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn simple_mapping()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            BlockMappingStart,
+            Key,
+            Scalar(cow!("a key"), Plain),
+            Value,
+            Scalar(cow!("a value"), Plain),
+            BlockEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root }),
+            | event!({ Scalar node!(scalar!("a key", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("a value", Plain), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn tags()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            Tag(cow!("!!"), cow!("map")),
+            BlockMappingStart,
+            Key,
+            Tag(cow!("!!"), cow!("str")),
+            Scalar(cow!("a key"), Plain),
+            Value,
+            Tag(cow!("!!"), cow!("str")),
+            Scalar(cow!("a value"), Plain),
+            BlockEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root @"!!", "map" }),
+            | event!({ Scalar node!(scalar!("a key", Plain), @Key @"!!", "str") }),
+            | event!({ Scalar node!(scalar!("a value", Plain), @Value @"!!", "str") }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn scalar_tag_non_resolvable()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            Tag(cow!("!"), cow!("")),
+            Scalar(cow!("Scalar with non-resolvable tag"), DoubleQuote),
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            // Note the absence of a tag
+            | event!({ Scalar node!(scalar!("Scalar with non-resolvable tag", DoubleQuote), @Root) }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn error_undefined_tag()
+    {
+        use TestResult as T;
+
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            Tag(cow!("!unknown!"), cow!("bad-tag-handle")),
+            Scalar(cow!("Scalar with non-resolvable tag"), DoubleQuote),
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            > T::Err(Error::UndefinedTag)
+        );
+    }
+
+    #[test]
+    fn flow_sequence_compact_mapping()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            FlowSequenceStart,
+            /* FlowMappingStart */
+            Key,
+            Scalar(cow!("compact mapping key"), DoubleQuote),
+            Value,
+            Scalar(cow!("compact mapping value"), DoubleQuote),
+            /* FlowMappingEnd */
+            FlowSequenceEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ SequenceStart @Root }),
+            | event!({ MappingStart @Entry }),
+            | event!({ Scalar node!(scalar!("compact mapping key", DoubleQuote), @Key) }),
+            | event!({ Scalar node!(scalar!("compact mapping value", DoubleQuote), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ SequenceEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn block_sequence_entry_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            BlockSequenceStart,
+            BlockEntry,
+            /* Scalar, */
+            BlockEntry,
+            Scalar(cow!("Entry #2"), SingleQuote),
+            BlockEntry,
+            /* Scalar, */
+            BlockEntry,
+            Scalar(cow!("Entry #4"), Plain),
+            BlockEntry,
+            /* Scalar, */
+            BlockEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ SequenceStart @Root }),
+            | event!({ Scalar node!(scalar!("", Plain), @Entry) }),
+            | event!({ Scalar node!(scalar!("Entry #2", SingleQuote), @Entry) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Entry) }),
+            | event!({ Scalar node!(scalar!("Entry #4", Plain), @Entry) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Entry) }),
+            | event!({ SequenceEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn block_mapping_key_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            BlockMappingStart,
+            Key,
+            /* Scalar, */
+            Value,
+            Scalar(cow!("value 1"), Plain),
+            Key,
+            Scalar(cow!("key 2"), Plain),
+            Value,
+            Scalar(cow!("value 2"), Plain),
+            Key,
+            /* Scalar, */
+            Value,
+            Scalar(cow!("value 3"), Plain),
+            BlockEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root }),
+            | event!({ Scalar node!(scalar!("", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("value 1", Plain), @Value) }),
+            | event!({ Scalar node!(scalar!("key 2", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("value 2", Plain), @Value) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("value 3", Plain), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn block_mapping_value_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            BlockMappingStart,
+            Key,
+            Scalar(cow!("key 1"), Plain),
+            Value,
+            /* Scalar, */
+            Key,
+            Scalar(cow!("key 2"), Plain),
+            Value,
+            Scalar(cow!("value 2"), Plain),
+            Key,
+            Scalar(cow!("key 3"), Plain),
+            /* Value, */
+            /* Scalar, */
+            Key,
+            Scalar(cow!("key 4"), Plain),
+            Value,
+            /* Scalar, */
+            BlockEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root }),
+            | event!({ Scalar node!(scalar!("key 1", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Value) }),
+            | event!({ Scalar node!(scalar!("key 2", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("value 2", Plain), @Value) }),
+            | event!({ Scalar node!(scalar!("key 3", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Value) }),
+            | event!({ Scalar node!(scalar!("key 4", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn flow_sequence_entry_mapping_key_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            FlowSequenceStart,
+            /* FlowMappingStart */
+            Key,
+            /* Scalar */
+            Value,
+            Scalar(cow!("compact mapping value"), DoubleQuote),
+            /* FlowMappingEnd */
+            FlowSequenceEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ SequenceStart @Root }),
+            | event!({ MappingStart @Entry }),
+            | event!({ Scalar node!(scalar!("", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("compact mapping value", DoubleQuote), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ SequenceEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn flow_sequence_entry_mapping_value_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            FlowSequenceStart,
+            /* FlowMappingStart */
+            Key,
+            Scalar(cow!("compact mapping key"), DoubleQuote),
+            Value,
+            /* Scalar */
+            /* FlowMappingEnd */
+            FlowSequenceEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ SequenceStart @Root }),
+            | event!({ MappingStart @Entry }),
+            | event!({ Scalar node!(scalar!("compact mapping key", DoubleQuote), @Key) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ SequenceEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn flow_mapping_key_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            FlowMappingStart,
+            Key,
+            /* Scalar */
+            Value,
+            Scalar(cow!("value 1"), SingleQuote),
+            FlowMappingEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root }),
+            | event!({ Scalar node!(scalar!("", Plain), @Key) }),
+            | event!({ Scalar node!(scalar!("value 1", SingleQuote), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn flow_mapping_value_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            FlowMappingStart,
+            Key,
+            Scalar(cow!("key 1"), SingleQuote),
+            Value,
+            /* Scalar */
+            FlowMappingEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root }),
+            | event!({ Scalar node!(scalar!("key 1", SingleQuote), @Key) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn flow_mapping_key_singleton()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            FlowMappingStart,
+            /* Key */
+            Scalar(cow!("singleton key"), SingleQuote),
+            /* Value */
+            /* Scalar */
+            FlowMappingEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ MappingStart @Root }),
+            | event!({ Scalar node!(scalar!("singleton key", SingleQuote), @Key) }),
+            | event!({ Scalar node!(scalar!("", Plain), @Value) }),
+            | event!({ MappingEnd }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn node_anchor_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            Anchor(cow!("empty")),
+            /* Scalar */
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ Scalar node!(scalar!("", Plain), @Root &"empty") }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn node_tag_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            Tag(cow!("!!"), cow!("str")),
+            /* Scalar */
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart }),
+            | event!({ Scalar node!(scalar!("", Plain), @Root @"!!", "str") }),
+            | event!({ DocumentEnd }),
+            | event!({ StreamEnd }),
+            @ None
+        );
+    }
+
+    #[test]
+    fn multi_document_implied()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            DocumentStart,
+            Scalar(cow!("Document 1"), SingleQuote),
+            DocumentEnd,
+            /* DocumentStart */
+            Scalar(cow!("Document 2"), SingleQuote),
+            /* DocumentEnd */
+            DocumentStart,
+            Scalar(cow!("Document 3"), SingleQuote),
+            /* DocumentEnd */
+            DocumentStart,
+            Scalar(cow!("Document 4"), SingleQuote),
+            DocumentEnd,
+            /* DocumentStart */
+            Scalar(cow!("Document 5"), SingleQuote),
+            DocumentEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart @explicit }),
+            | event!({ Scalar node!(scalar!("Document 1", SingleQuote), @Root) }),
+            | event!({ DocumentEnd @explicit }),
+            | event!({ DocumentStart }),
+            | event!({ Scalar node!(scalar!("Document 2", SingleQuote), @Root) }),
+            | event!({ DocumentEnd }),
+            | event!({ DocumentStart @explicit }),
+            | event!({ Scalar node!(scalar!("Document 3", SingleQuote), @Root) }),
+            | event!({ DocumentEnd }),
+            | event!({ DocumentStart @explicit }),
+            | event!({ Scalar node!(scalar!("Document 4", SingleQuote), @Root) }),
+            | event!({ DocumentEnd @explicit }),
+            | event!({ DocumentStart }),
+            | event!({ Scalar node!(scalar!("Document 5", SingleQuote), @Root) }),
+            | event!({ DocumentEnd @explicit }),
+            | event!({ StreamEnd}),
+            @ None
+        )
+    }
+
+    #[test]
+    fn multi_document_directives()
+    {
+        let tokens = tokens![
+            StreamStart(StreamEncoding::UTF8),
+            VersionDirective(1, 2),
+            TagDirective(cow!("!test1!"), cow!("doc1.1")),
+            DocumentStart,
+            DocumentEnd,
+            TagDirective(cow!("!test1!"), cow!("doc2.1")),
+            VersionDirective(1, 1),
+            TagDirective(cow!("!test2!"), cow!("doc2.2")),
+            DocumentStart,
+            DocumentEnd,
+            StreamEnd
+        ];
+
+        events!(tokens =>
+            | event!({ StreamStart }),
+            | event!({ DocumentStart @explicit 1,2 [{"!test1!", "doc1.1"}] }),
+            | event!({ DocumentEnd @explicit }),
+            | event!({ DocumentStart @explicit 1,1 [{"!test1!", "doc2.1"}, {"!test2!", "doc2.2"}] }),
+            | event!({ DocumentEnd @explicit }),
+            | event!({ StreamEnd}),
+            @ None
+        )
     }
 }
