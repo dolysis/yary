@@ -194,7 +194,7 @@ pub(in crate::scanner) fn scan_block_scalar_eager<'de>(
         //    I can be borrowed
         if can_borrow && lines > 0
         {
-            scratch.extend_from_slice(&base[content_start..content_end].as_bytes());
+            scratch.extend_from_slice(base[content_start..content_end].as_bytes());
 
             can_borrow = false
         }
@@ -540,7 +540,7 @@ fn scan_chomp<'de>(
                 // when .style == Keep
                 _ =>
                 {
-                    scratch.extend_from_slice(&base[start..end].as_bytes());
+                    scratch.extend_from_slice(base[start..end].as_bytes());
 
                     while lines > 0
                     {

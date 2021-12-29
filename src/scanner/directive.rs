@@ -20,7 +20,7 @@ use crate::{
 pub(in crate::scanner) fn scan_directive<'de>(
     opts: Flags,
     buffer: &mut &'de str,
-    mut stats: &mut MStats,
+    stats: &mut MStats,
     kind: &DirectiveKind,
 ) -> Result<Token<'de>>
 {
@@ -29,10 +29,7 @@ pub(in crate::scanner) fn scan_directive<'de>(
         DirectiveKind::Version =>
         {
             // Chomp any preceding whitespace
-            advance!(
-                *buffer,
-                eat_whitespace(opts, buffer, &mut stats, !COMMENTS)?
-            );
+            advance!(*buffer, eat_whitespace(opts, buffer, stats, !COMMENTS)?);
 
             // %YAML 1.1
             //       ^
@@ -55,13 +52,10 @@ pub(in crate::scanner) fn scan_directive<'de>(
         DirectiveKind::Tag =>
         {
             // Chomp any spaces up to the handle
-            advance!(
-                *buffer,
-                eat_whitespace(opts, buffer, &mut stats, !COMMENTS)?
-            );
+            advance!(*buffer, eat_whitespace(opts, buffer, stats, !COMMENTS)?);
 
             // Scan the directive, copying if necessary
-            let (token, amt) = scan_tag_directive(opts, buffer, &mut stats)?;
+            let (token, amt) = scan_tag_directive(opts, buffer, stats)?;
             advance!(*buffer, amt);
 
             Ok(token)

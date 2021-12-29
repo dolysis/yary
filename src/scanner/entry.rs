@@ -135,7 +135,7 @@ impl<'de> From<flow::Deferred<'de>> for Lazy<'de>
     fn from(inner: flow::Deferred<'de>) -> Self
     {
         Self {
-            inner: LazyImpl::ScalarF(inner),
+            inner: LazyImpl::Flow(inner),
         }
     }
 }
@@ -145,7 +145,7 @@ impl<'de> From<plain::Deferred<'de>> for Lazy<'de>
     fn from(inner: plain::Deferred<'de>) -> Self
     {
         Self {
-            inner: LazyImpl::ScalarP(inner),
+            inner: LazyImpl::Plain(inner),
         }
     }
 }
@@ -155,7 +155,7 @@ impl<'de> From<block::Deferred<'de>> for Lazy<'de>
     fn from(inner: block::Deferred<'de>) -> Self
     {
         Self {
-            inner: LazyImpl::ScalarB(inner),
+            inner: LazyImpl::Block(inner),
         }
     }
 }
@@ -163,9 +163,9 @@ impl<'de> From<block::Deferred<'de>> for Lazy<'de>
 #[derive(Debug, Clone)]
 enum LazyImpl<'de>
 {
-    ScalarF(flow::Deferred<'de>),
-    ScalarP(plain::Deferred<'de>),
-    ScalarB(block::Deferred<'de>),
+    Flow(flow::Deferred<'de>),
+    Plain(plain::Deferred<'de>),
+    Block(block::Deferred<'de>),
 }
 
 impl<'de> LazyImpl<'de>
@@ -174,9 +174,9 @@ impl<'de> LazyImpl<'de>
     {
         match self
         {
-            Self::ScalarF(inner) => inner.into_token(),
-            Self::ScalarP(inner) => inner.into_token(),
-            Self::ScalarB(inner) => inner.into_token(),
+            Self::Flow(inner) => inner.into_token(),
+            Self::Plain(inner) => inner.into_token(),
+            Self::Block(inner) => inner.into_token(),
         }
     }
 }
