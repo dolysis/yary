@@ -11,7 +11,7 @@ use crate::{
         error::ScanResult as Result,
         scalar::{block, flow, plain},
     },
-    token::Token,
+    token::{Marker, Token},
 };
 
 /// A wrapper around a token containing a custom Ord impl
@@ -41,6 +41,11 @@ impl<'de> TokenEntry<'de>
     pub fn read_at(&self) -> usize
     {
         self.read_at
+    }
+
+    pub fn marker(&self) -> Marker
+    {
+        self.wrap.marker()
     }
 
     pub fn is_processed(&self) -> bool
@@ -89,6 +94,15 @@ pub enum MaybeToken<'de>
 
 impl<'de> MaybeToken<'de>
 {
+    pub fn marker(&self) -> Marker
+    {
+        match self
+        {
+            MaybeToken::Token(t) => t.into(),
+            MaybeToken::Deferred(l) => l.marker(),
+        }
+    }
+
     pub fn into_token(self) -> Result<Token<'de>>
     {
         match self
@@ -125,6 +139,11 @@ pub struct Lazy<'de>
 
 impl<'de> Lazy<'de>
 {
+    pub fn marker(&self) -> Marker
+    {
+        self.inner.marker()
+    }
+
     pub fn into_token(self) -> Result<Token<'de>>
     {
         self.inner.into_token()
@@ -170,6 +189,11 @@ enum LazyImpl<'de>
 
 impl<'de> LazyImpl<'de>
 {
+    pub fn marker(&self) -> Marker
+    {
+        Marker::Scalar
+    }
+
     pub fn into_token(self) -> Result<Token<'de>>
     {
         match self
