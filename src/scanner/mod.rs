@@ -105,6 +105,16 @@ impl Scanner
         Ok(num_tokens)
     }
 
+    pub fn offset(&self) -> usize
+    {
+        self.offset
+    }
+
+    pub fn reset_offset(&mut self)
+    {
+        self.offset = 0;
+    }
+
     fn scan_next_token<'de>(
         &mut self,
         opts: Flags,
