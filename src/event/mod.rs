@@ -3,13 +3,3 @@
  * Mozilla Public License, v. 2.0. If a copy of the MPL
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-
-#![allow(dead_code)]
-#![allow(clippy::suspicious_else_formatting)]
-
-mod error;
-mod event;
-mod queue;
-mod reader;
-mod scanner;
-mod token;
