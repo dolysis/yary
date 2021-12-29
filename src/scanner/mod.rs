@@ -12,9 +12,9 @@ mod macros;
 mod anchor;
 mod context;
 mod directive;
-mod entry;
-mod error;
-mod flag;
+pub mod entry;
+pub mod error;
+pub mod flag;
 mod key;
 mod scalar;
 mod stats;
@@ -40,7 +40,7 @@ use crate::{
 type Tokens<'de> = Queue<TokenEntry<'de>>;
 
 #[derive(Debug)]
-struct Scanner
+pub struct Scanner
 {
     /// Offset into the data buffer to start at
     offset: usize,

@@ -20,7 +20,7 @@ use crate::{
 /// Note that this wrapper *does not* compare tokens, so if
 /// you desire that ensure that you compare them directly
 #[derive(Debug)]
-pub(crate) struct TokenEntry<'de>
+pub struct TokenEntry<'de>
 {
     pub wrap: MaybeToken<'de>,
     read_at:  usize,
