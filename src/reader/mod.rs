@@ -213,3 +213,132 @@ mod private
     {
     }
 }
+
+#[cfg(test)]
+mod test_util
+{
+    use super::*;
+    use crate::{
+        scanner::flag::O_ZEROED,
+        token::Marker::{self, *},
+    };
+
+    pub(super) type TestResult = anyhow::Result<()>;
+
+    pub(super) const TEST_FLAGS: Flags = O_ZEROED;
+    pub(super) const TEST_DATA: [&str; 3] = [YAML_SCALAR, YAML_SEQUENCE, YAML_MAPPING];
+
+    pub(super) const YAML_SCALAR: &str = "'a simple, root scalar'";
+    pub(super) const YAML_SEQUENCE: &str = "
+        - A
+        - YAML
+        - Sequence";
+    pub(super) const YAML_MAPPING: &str = "{'A YAML': Mapping}";
+
+    pub(super) const SCALAR_MARKERS: [Marker; 3] = [StreamStart, Scalar, StreamEnd];
+    pub(super) const SEQUENCE_MARKERS: [Marker; 10] = [
+        StreamStart,
+        BlockSequenceStart,
+        BlockEntry,
+        Scalar,
+        BlockEntry,
+        Scalar,
+        BlockEntry,
+        Scalar,
+        BlockEnd,
+        StreamEnd,
+    ];
+    pub(super) const MAPPING_MARKERS: [Marker; 8] = [
+        StreamStart,
+        FlowMappingStart,
+        Key,
+        Scalar,
+        Value,
+        Scalar,
+        FlowMappingEnd,
+        StreamEnd,
+    ];
+
+    fn data_into_read<T, F>(data: &'static str, f: F) -> T
+    where
+        F: Fn(&'static str) -> T,
+        T: Read,
+    {
+        f(data)
+    }
+
+    pub(super) fn t_scalar<T, F>(f: F) -> T
+    where
+        F: Fn(&'static str) -> T,
+        T: Read,
+    {
+        data_into_read(YAML_SCALAR, f)
+    }
+
+    pub(super) fn t_sequence<T, F>(f: F) -> T
+    where
+        F: Fn(&'static str) -> T,
+        T: Read,
+    {
+        data_into_read(YAML_SEQUENCE, f)
+    }
+
+    pub(super) fn t_mapping<T, F>(f: F) -> T
+    where
+        F: Fn(&'static str) -> T,
+        T: Read,
+    {
+        data_into_read(YAML_MAPPING, f)
+    }
+
+    pub(super) fn drive_test<'a, T>(r: &mut Reader<'a, T>, expected: &[Marker]) -> TestResult
+    where
+        T: Read,
+    {
+        use pretty_assertions::assert_eq;
+
+        let mut tokens;
+        let mut expected = expected.iter().copied();
+
+        while !r.is_exhausted()
+        {
+            tokens = r.scan_tokens()?;
+
+            while let Some(actual) = tokens.pop().map(|entry| entry.marker())
+            {
+                assert_eq!(expected.next(), Some(actual));
+            }
+        }
+
+        Ok(())
+    }
+
+    macro_rules! test_reader {
+        ($read_fn:expr) => {
+            test_reader!{@inner $read_fn}
+        };
+        (@inner $read_fn:expr) => {
+            use $crate::reader::test_util as __util;
+
+            test_reader![@test
+                simple_scalar => { __util::t_scalar, $read_fn, __util::SCALAR_MARKERS },
+                simple_sequence => { __util::t_sequence, $read_fn, __util::SEQUENCE_MARKERS },
+                simple_mapping => { __util::t_mapping, $read_fn, __util::MAPPING_MARKERS }
+            ];
+        };
+        (@test $( $t_name:ident => { $data_fn:path, $read_fn:expr, $expected:expr }),+ ) => {
+            $(
+                #[test]
+                fn $t_name() -> __util::TestResult
+                {
+                    let src = $data_fn($read_fn);
+                    let mut reader = $crate::reader::Reader::new(&src, __util::TEST_FLAGS);
+
+                    __util::drive_test(&mut reader, &$expected)
+                }
+            )+
+        };
+    }
+
+    pub(super) use test_reader;
+}
