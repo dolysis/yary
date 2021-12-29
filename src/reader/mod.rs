@@ -7,6 +7,7 @@
 mod error;
 
 pub mod borrow;
+pub mod owned;
 
 pub use error::{ReaderError, ReaderResult};
 use private::Sealed;
