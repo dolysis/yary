@@ -274,3 +274,21 @@ impl fmt::Debug for Take<'_>
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests
+{
+    use std::io::Cursor;
+
+    use super::*;
+    use crate::reader::test_util::test_reader;
+
+    fn str_to_owned_reader(data: &str) -> OwnedReader
+    {
+        let read = Cursor::new(data.as_bytes().to_vec());
+
+        OwnedReader::new(read)
+    }
+
+    test_reader! {str_to_owned_reader}
+}
