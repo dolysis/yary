@@ -49,6 +49,164 @@ pub trait Read: std::fmt::Debug + Sealed
     }
 }
 
+/// Responsible for driving a Read implementation,
+/// tokenizing the byte stream in preparation for
+/// for an Event stream
+#[derive(Debug)]
+pub struct Reader<'de, T: 'de>
+{
+    scanner: Scanner,
+    queue:   Queue<TokenEntry<'de>>,
+
+    options:   Flags,
+    exhausted: bool,
+
+    inner: &'de T,
+}
+
+impl<'de, T> Reader<'de, T>
+where
+    T: Read,
+{
+    pub fn new(read: &'de T, opts: Flags) -> Self
+    {
+        Self {
+            scanner:   Scanner::new(),
+            queue:     Queue::new(),
+            options:   opts,
+            exhausted: false,
+            inner:     read,
+        }
+    }
+
+    pub fn scan_tokens(&mut self) -> Result<&mut Queue<TokenEntry<'de>>>
+    {
+        let start = self.queue.len();
+
+        self.inner
+            .drive(&mut self.scanner, &mut self.queue, self.options)?;
+
+        self.exhausted = start == self.queue.len();
+
+        Ok(&mut self.queue)
+    }
+
+    pub fn is_exhausted(&self) -> bool
+    {
+        self.exhausted && self.queue.is_empty()
+    }
+
+    pub fn queue_mut(&mut self) -> &mut Queue<TokenEntry<'de>>
+    {
+        &mut self.queue
+    }
+
+    pub(crate) fn queue(&self) -> &Queue<TokenEntry<'de>>
+    {
+        &self.queue
+    }
+
+    pub(crate) fn from_parts(
+        read: &'de T,
+        options: Flags,
+        queue: Queue<TokenEntry<'de>>,
+        exhausted: bool,
+    ) -> Self
+    {
+        Self {
+            scanner: Scanner::new(),
+            queue,
+            options,
+            exhausted,
+            inner: read,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PeekReader<'de, T: 'de>
+{
+    peek:   Option<TokenEntry<'de>>,
+    reader: Reader<'de, T>,
+}
+
+impl<'de, T> PeekReader<'de, T>
+where
+    T: Read,
+{
+    pub fn new(reader: Reader<'de, T>) -> Self
+    {
+        Self { peek: None, reader }
+    }
+
+    pub fn pop(&mut self) -> Result<Option<TokenEntry<'de>>>
+    {
+        match self.peek.take()
+        {
+            Some(entry) => Ok(Some(entry)),
+            None if !self.reader.is_exhausted() =>
+            {
+                self.take_next()?;
+
+                Ok(self.peek.take())
+            },
+            None => Ok(None),
+        }
+    }
+
+    pub fn peek(&mut self) -> Result<Option<&mut TokenEntry<'de>>>
+    {
+        match self.peek
+        {
+            Some(ref mut entry) => Ok(Some(entry)),
+            None if !self.reader.is_exhausted() =>
+            {
+                self.take_next()?;
+
+                Ok(self.peek.as_mut())
+            },
+            None => Ok(None),
+        }
+    }
+
+    pub fn consume(&mut self) -> bool
+    {
+        self.peek.take().is_some()
+    }
+
+    pub fn into_inner(self) -> (Reader<'de, T>, Option<TokenEntry<'de>>)
+    {
+        let Self { peek, reader } = self;
+
+        (reader, peek)
+    }
+
+    pub(crate) fn queue(&self) -> &Queue<TokenEntry<'de>>
+    {
+        self.reader.queue()
+    }
+
+    fn take_next(&mut self) -> Result<()>
+    {
+        // Ensure we don't overwrite an existing entry
+        if self.peek.is_some()
+        {
+            return Ok(());
+        }
+
+        // If the queue is empty, make an attempt to retrieve more
+        // tokens from the Reader
+        if self.reader.queue_mut().is_empty()
+        {
+            self.reader.scan_tokens()?;
+        }
+
+        self.peek = self.reader.queue_mut().pop();
+
+        Ok(())
+    }
+}
+
 mod private
 {
     pub trait Sealed
