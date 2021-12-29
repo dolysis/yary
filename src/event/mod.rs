@@ -10,7 +10,9 @@ use crate::{
     event::{
         error::{ParseError as Error, ParseResult as Result},
         state::{Flags, State, StateMachine, O_EMPTY, O_FIRST, O_IMPLICIT, O_NIL},
-        types::{Directives, Event, EventData, NodeKind, DEFAULT_TAGS, EMPTY_SCALAR},
+        types::{
+            Directives, Event, EventData, NodeKind, TagDirectives, DEFAULT_TAGS, EMPTY_SCALAR,
+        },
     },
     reader::{PeekReader, Read},
     token::{Marker, Slice},
@@ -943,7 +945,117 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let mut event;
+        let (mut start, mut end, token) = peek!(tokens)?;
+
+        // If the node is an alias, return it
+        if matches!(token, Marker::Alias)
+        {
+            state!(~self, << None);
+
+            event = initEvent!(@consume Alias => tokens).map(Some)?;
+        }
+        // Otherwise, we must handle the node variants and any anchor or tag
+        else
+        {
+            let mut anchor = None;
+            let mut tag = None;
+
+            // Look for any anchor or tag in the token stream
+            //
+            // Note that the fetch_* functions used below will not error
+            // out if we've hit the end of token stream, unlike most
+            // Parser functions
+            match token
+            {
+                Marker::Anchor =>
+                {
+                    anchor = fetch_anchor(tokens, &mut start, &mut end)?;
+                    tag = fetch_tag(tokens, &mut start, &mut end)?;
+                },
+                Marker::Tag =>
+                {
+                    tag = fetch_tag(tokens, &mut start, &mut end)?;
+                    anchor = fetch_anchor(tokens, &mut start, &mut end)?;
+                },
+                _ =>
+                {},
+            }
+
+            // Refresh our current token view
+            let (_, end, token) = peek!(tokens)?;
+
+            // Handle possible node variants
+            match token
+            {
+                // Start of sequence (flow)
+                Marker::FlowSequenceStart =>
+                {
+                    event =
+                        initEvent!(@event FlowSequenceStart => (start, end, (anchor, tag, kind)))
+                            .into();
+
+                    state!(~self, -> State::FlowSequenceEntry(O_FIRST));
+                },
+                // Start of mapping (flow)
+                Marker::FlowMappingStart =>
+                {
+                    event =
+                        initEvent!(@event FlowMappingStart => (start, end, (anchor, tag, kind)))
+                            .into();
+
+                    state!(~self, -> State::FlowMappingKey(O_FIRST));
+                },
+                // Start of sequence (block)
+                Marker::BlockSequenceStart if block =>
+                {
+                    event =
+                        initEvent!(@event BlockSequenceStart => (start, end, (anchor, tag, kind)))
+                            .into();
+
+                    state!(~self, -> State::BlockSequenceEntry(O_FIRST));
+                },
+                // Start of mapping (block)
+                Marker::BlockMappingStart if block =>
+                {
+                    event =
+                        initEvent!(@event BlockMappingStart => (start, end, (anchor, tag, kind)))
+                            .into();
+
+                    state!(~self, -> State::BlockMappingKey(O_FIRST));
+                },
+                // Non empty scalar
+                Marker::Scalar =>
+                {
+                    let (_, _, scalar) = consume!(tokens, Scalar)?;
+                    event = initEvent!(@event Scalar => (start, end, (anchor, tag, kind, scalar)))
+                        .into();
+
+                    state!(~self, << None);
+                },
+                // Implicit, empty scalar
+                _ if anchor.is_some() || tag.is_some() =>
+                {
+                    // Note we do not consume the unknown token here
+
+                    event = initEvent!(@event Scalar => (start, end, (anchor, tag, kind, EMPTY_SCALAR)))
+                        .into();
+
+                    state!(~self, << None);
+                },
+                // Otherwise its an error
+                _ => return Err(Error::MissingNode),
+            }
+        }
+
+        // Ensure the event's tag (if it exists) is in the active
+        // directives map
+        if let Some(ref mut event) = event
+        {
+            validate_event_tag(&self.directives.tags, event)?
+        }
+
+        Ok(event)
     }
 
     /// Produce an empty scalar node [Event], always returns
@@ -1029,6 +1141,54 @@ where
     Ok((start, end, directives))
 }
 
+/// Attempt to retrieve an Anchor token's name if one exists
+/// at the head of the token stream
+fn fetch_anchor<'de, T>(
+    tokens: &mut Tokens<'de, T>,
+    start: &mut usize,
+    end: &mut usize,
+) -> Result<Option<Slice<'de>>>
+where
+    T: Read,
+{
+    let token = peek!(@~tokens)?;
+    let mut anchor = None;
+
+    if let Some(Marker::Anchor) = token
+    {
+        let (s, e, name) = consume!(tokens, Anchor)?;
+        *start = s;
+        *end = e;
+        anchor = Some(name);
+    }
+
+    Ok(anchor)
+}
+
+/// Attempt to retrieve an Tag token's handle and suffix if
+/// one exists at the head of the token stream
+fn fetch_tag<'de, T>(
+    tokens: &mut Tokens<'de, T>,
+    start: &mut usize,
+    end: &mut usize,
+) -> Result<Option<(Slice<'de>, Slice<'de>)>>
+where
+    T: Read,
+{
+    let token = peek!(@~tokens)?;
+    let mut tag = None;
+
+    if let Some(Marker::Tag) = token
+    {
+        let (s, e, (handle, suffix)) = consume!(tokens, Tag)?;
+        *start = s;
+        *end = e;
+        tag = Some((handle, suffix));
+    }
+
+    Ok(tag)
+}
+
 fn fetch_sequence_end<'de, T>(
     this: &mut Parser,
     tokens: &mut Tokens<'de, T>,
@@ -1059,6 +1219,57 @@ where
     pop!(tokens)?;
 
     Ok(initEvent!(@event MappingEnd => (start, end, ())))
+}
+
+fn validate_event_tag(tags: &TagDirectives, event: &mut Event) -> Result<()>
+{
+    match event.data_mut()
+    {
+        EventData::Scalar(node) => validate_tag(tags, &mut node.tag, true),
+        EventData::SequenceStart(node) => validate_tag(tags, &mut node.tag, false),
+        EventData::MappingStart(node) => validate_tag(tags, &mut node.tag, false),
+        _ => Ok(()),
+    }
+}
+
+fn validate_tag(tags: &TagDirectives, tag: &mut Option<(Slice, Slice)>, scalar: bool)
+    -> Result<()>
+{
+    if let Some((handle, suffix)) = tag.as_ref()
+    {
+        // A YAML scalar tag may be marked as
+        // 'non-resolvable', in which case we skip the
+        // checks
+        let resolvable = !(handle == "!" && suffix.is_empty());
+
+        match (scalar, resolvable)
+        {
+            // Verify tag handle exists in the directives if we're either:
+            //
+            // 1. Not a scalar
+            // 2. Scalar and resolvable
+            (false, _) | (true, true) =>
+            {
+                if tags.get(handle).is_none()
+                {
+                    return Err(Error::UndefinedTag);
+                }
+            },
+            // Remove any non-resolvable tags from scalars, they'll just confuse callers
+            (true, false) => *tag = None,
+        }
+    }
+
+    Ok(())
+}
+
+fn tags_to_owned<'a>((handle, prefix): (&Slice<'a>, &Slice<'a>))
+    -> (Slice<'static>, Slice<'static>)
+{
+    let handle: String = handle.to_string();
+    let prefix: String = prefix.to_string();
+
+    (handle.into(), prefix.into())
 }
 
 /// Provides an [Iterator] interface to interact with
