@@ -63,3 +63,12 @@ impl<'a> Read for BorrowReader<'a>
 }
 
 impl private::Sealed for BorrowReader<'_> {}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use crate::reader::test_util::test_reader;
+
+    test_reader! {BorrowReader::new}
+}
