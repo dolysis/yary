@@ -652,7 +652,42 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Key;
+
+        let (start, _, token) = peek!(tokens)?;
+
+        /*
+         * If the token is one of these, then we must add an
+         * empty key as one is implied by the stream,
+         * e.g:
+         *
+         * [  : a value, ]
+         *   ^ key is implied here
+         */
+        let empty = matches!(
+            token,
+            Marker::Value | Marker::FlowEntry | Marker::FlowSequenceEnd
+        );
+
+        // Not empty, save our state to the stack, and forward to
+        // node()
+        if !empty
+        {
+            state!(~self, >> State::FlowSequenceMappingValue);
+
+            event = self.node(tokens, !BLOCK_CONTEXT, kind)?;
+        }
+        // Otherwise, return an empty scalar as the key
+        // token = Value | FlowEntry | FlowSequenceEnd
+        else
+        {
+            state!(~self, -> State::FlowSequenceMappingValue);
+
+            event = self.empty_scalar(start, kind).map(Some)?;
+        }
+
+        Ok(event)
     }
 
     /// Flow mapping value with parent flow sequence, return
@@ -669,7 +704,31 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Value;
+        let (start, _, token) = peek!(tokens)?;
+
+        // If we find a value token, and *do not* find evidence of
+        // an implied token, save our state to the stack and forward
+        // to node()
+        if matches!(token, Marker::Value)
+            && pop!(tokens)
+                .and_then(|_| peek!(~tokens))
+                .map(|t| !matches!(t, Marker::FlowEntry | Marker::FlowSequenceEnd))?
+        {
+            state!(~self, >> State::FlowSequenceMappingEnd);
+
+            event = self.node(tokens, !BLOCK_CONTEXT, kind)?;
+        }
+        // Otherwise it must be an empty, implied value
+        else
+        {
+            state!(~self, -> State::FlowSequenceMappingEnd);
+
+            event = self.empty_scalar(start, kind).map(Some)?;
+        }
+
+        Ok(event)
     }
 
     /// Clean up after a flow_sequence->flow_mapping state
@@ -681,7 +740,16 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let (start, end, token) = peek!(tokens)?;
+
+        debug_assert!(matches!(token, Marker::FlowEntry | Marker::FlowSequenceEnd));
+
+        // Revert to parsing the next entry in the parent sequence
+        state!(~self, -> State::FlowSequenceEntry(O_NIL));
+
+        let event = initEvent!(@event MappingEnd => (start, end, ())).into();
+
+        Ok(event)
     }
 
     /// Flow context mapping key, return the appropriate
