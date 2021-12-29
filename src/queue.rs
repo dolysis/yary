@@ -23,7 +23,7 @@ use std::{
 /// A min heap data structure that keeps a stable ordering
 /// of elements, ensuring that otherwise equal items are
 /// returned in the order added
-pub(crate) struct Queue<T>
+pub struct Queue<T>
 {
     heap:      BinaryHeap<Reverse<QueueEntry<T>>>,
     increment: usize,
@@ -181,7 +181,7 @@ where
     }
 }
 
-pub(crate) struct QueueIntoIter<T>
+pub struct QueueIntoIter<T>
 {
     inner: Queue<T>,
 }
