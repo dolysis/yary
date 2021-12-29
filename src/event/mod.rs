@@ -6,11 +6,12 @@
 
 use crate::{
     event::{
-        error::ParseResult as Result,
-        state::{Flags, State, StateMachine},
-        types::{Directives, Event, NodeKind},
+        error::{ParseError as Error, ParseResult as Result},
+        state::{Flags, State, StateMachine, O_FIRST, O_IMPLICIT},
+        types::{Directives, Event, EventData, NodeKind, EMPTY_SCALAR},
     },
     reader::{PeekReader, Read},
+    token::{Marker, Slice},
 };
 
 #[macro_use]
@@ -151,7 +152,17 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let token = peek!(~tokens)?;
+
+        let event = match token
+        {
+            Marker::StreamStart => initEvent!(@consume StreamStart => tokens),
+            _ => Err(Error::CorruptStream),
+        }?;
+
+        state!(~self, -> State::DocumentStart(O_IMPLICIT | O_FIRST));
+
+        Ok(Some(event))
     }
 
     /// End of token stream, set ourself to done and produce
@@ -160,7 +171,15 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        if self.done
+        {
+            return Ok(None);
+        }
+
+        let event = initEvent!(@consume StreamEnd => tokens).map(Some)?;
+        self.done = true;
+
+        Ok(event)
     }
 
     /// Start of a new document, process any directives,
@@ -339,7 +358,10 @@ impl Parser
     /// Ok, the Result is mostly for compose-ability
     fn empty_scalar(&mut self, mark: usize, kind: NodeKind) -> Result<Event<'static>>
     {
-        todo!()
+        let event =
+            initEvent!(@event Scalar => (mark, mark, (NO_ANCHOR, NO_TAG, kind, EMPTY_SCALAR)));
+
+        Ok(event)
     }
 }
 
@@ -375,3 +397,5 @@ where
 }
 
 const BLOCK_CONTEXT: bool = true;
+const NO_ANCHOR: Option<Slice<'static>> = None;
+const NO_TAG: Option<(Slice<'static>, Slice<'static>)> = None;
