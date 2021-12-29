@@ -9,7 +9,7 @@ use std::array::IntoIter as ArrayIter;
 use crate::{
     event::{
         error::{ParseError as Error, ParseResult as Result},
-        state::{Flags, State, StateMachine, O_FIRST, O_IMPLICIT, O_NIL},
+        state::{Flags, State, StateMachine, O_EMPTY, O_FIRST, O_IMPLICIT, O_NIL},
         types::{Directives, Event, EventData, NodeKind, DEFAULT_TAGS, EMPTY_SCALAR},
     },
     reader::{PeekReader, Read},
@@ -369,7 +369,63 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let kind = NodeKind::Entry;
+
+        // Handle the sequence start if this is the first entry
+        if opts.contains(O_FIRST)
+        {
+            let token = pop!(tokens).map(|entry| entry.marker())?;
+
+            debug_assert!(matches!(token, Marker::BlockSequenceStart))
+        }
+
+        let event;
+        let (start, end, token) = peek!(tokens)?;
+
+        match token
+        {
+            // Sequence entry
+            Marker::BlockEntry =>
+            {
+                pop!(tokens)?;
+
+                match peek!(~tokens)?
+                {
+                    /*
+                     * Handles productions with empty implicit nodes, e.g
+                     *
+                     *  sequence:
+                     *    -
+                     *  # ^------- Entry (-) implies content exists
+                     *    - 1
+                     *    - N...
+                     */
+                    Marker::BlockEntry | Marker::BlockEnd =>
+                    {
+                        state!(~self, -> State::BlockSequenceEntry(O_NIL));
+                        event = self.empty_scalar(end, kind).map(Some)?;
+                    },
+                    // Otherwise send it on to the YAML Node handler, saving our state to the stack
+                    _ =>
+                    {
+                        state!(~self, >> State::BlockSequenceEntry(O_NIL));
+                        event = self.node(tokens, BLOCK_CONTEXT, kind)?;
+                    },
+                }
+            },
+            // End of sequence, produce the SequenceEnd event
+            Marker::BlockEnd =>
+            {
+                pop!(tokens)?;
+                state!(~self, << None);
+
+                event = initEvent!(@event SequenceEnd => (start, end, ())).into();
+            },
+            // Otherwise the YAML stream is invalid
+            _ => return Err(Error::MissingBlockEntry),
+        }
+
+        Ok(event)
     }
 
     /// Block context mapping key, return the appropriate
@@ -383,7 +439,58 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Key;
+
+        // If we're starting a new mapping we need to skip the
+        // opening token
+        if opts.contains(O_FIRST)
+        {
+            let token = peek!(~tokens)?;
+
+            debug_assert!(matches!(token, Marker::BlockMappingStart));
+
+            pop!(tokens)?;
+        }
+
+        let (start, end, token) = peek!(tokens)?;
+
+        match token
+        {
+            // Found the start of a mapping KV set
+            Marker::Key =>
+            {
+                // Get the next token
+                pop!(tokens)?;
+                let (start, _, token) = peek!(tokens)?;
+
+                // Any token other than the below is either a possible Node
+                // token sequence, or an error which node() will catch
+                if !matches!(token, Marker::Key | Marker::Value | Marker::BlockEnd)
+                {
+                    state!(~self, >> State::BlockMappingValue);
+                    event = self.node(tokens, BLOCK_CONTEXT, kind)?;
+                }
+                // Otherwise something strange is going on, could be an implied key or an error
+                else
+                {
+                    state!(~self, -> State::BlockMappingValue);
+                    event = self.empty_scalar(start, kind).map(Some)?;
+                }
+            },
+            // End of this mapping, pop the state stack
+            Marker::BlockEnd =>
+            {
+                pop!(tokens)?;
+                event = initEvent!(@event MappingEnd => (start, end, ())).into();
+
+                state!(~self, << None);
+            },
+            // Otherwise its an error
+            _ => return Err(Error::MissingKey),
+        }
+
+        Ok(event)
     }
 
     /// Block context mapping value, return the appropriate
@@ -396,7 +503,43 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Value;
+        let (_, end, token) = peek!(tokens)?;
+
+        match token
+        {
+            // Found a value in a KV mapping set
+            Marker::Value =>
+            {
+                // Get the next token
+                pop!(tokens)?;
+                let (_, end, token) = peek!(tokens)?;
+
+                // Any token other than the below is either a possible Node
+                // token sequence, or an error which node() will catch
+                if !matches!(token, Marker::Key | Marker::Value | Marker::BlockEnd)
+                {
+                    state!(~self, >> State::BlockMappingKey(O_NIL));
+                    event = self.node(tokens, BLOCK_CONTEXT, kind)?;
+                }
+                // Otherwise something strange is going on, could be an implied value or an error
+                else
+                {
+                    state!(~self, -> State::BlockMappingKey(O_NIL));
+                    event = self.empty_scalar(end, kind).map(Some)?;
+                }
+            },
+            // Because we are processing a KV value here, we have already processed a KV key, and
+            // therefore a value is automatically implied, regardless of what token follows.
+            _ =>
+            {
+                state!(~self, -> State::BlockMappingKey(O_NIL));
+                event = self.empty_scalar(end, kind).map(Some)?;
+            },
+        }
+
+        Ok(event)
     }
 
     /// Flow context sequence entry, return the associated
@@ -409,7 +552,94 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Entry;
+        let first = opts.contains(O_FIRST);
+
+        // If this is the first entry, we need to skip the
+        // SequenceStart token
+        if first
+        {
+            let token = pop!(tokens).map(|entry| entry.marker())?;
+
+            debug_assert!(matches!(token, Marker::FlowSequenceStart));
+        }
+
+        // Fetch the next token
+        let (start, end, token) = peek!(tokens)?;
+
+        // If its not the end of a sequence, we need to determine
+        // the next state
+        if !matches!(token, Marker::FlowSequenceEnd)
+        {
+            /*
+             * If its not the first entry, there *must* be a
+             * FlowEntry indicator (',') e.g:
+             *
+             * [ one, two, three]
+             *  ^   ^    ^
+             *  |   But the rest must have an entry
+             *  Okay to skip the first ','
+             */
+            if !first
+            {
+                match token
+                {
+                    Marker::FlowEntry => pop!(tokens).map(drop)?,
+                    _ => return Err(Error::MissingFlowSequenceEntryOrEnd),
+                }
+            }
+
+            // Refresh our token view
+            let (start, end, token) = peek!(tokens)?;
+
+            match token
+            {
+                /*
+                 * Start of a "compact" flow context mapping
+                 *
+                 * Note here, we *haven't* seen a FlowMappingStart, we've seen a Key...
+                 * That is, we're looking a production that looks like this:
+                 *
+                 *  [  key: value ,  entryN... ]
+                 *    ^----------^ Note the lack of '{' '}'s
+                 *
+                 *  This is, in YAML's opinion, completely fine and *only* supports this
+                 *  exact scenario, e.g inside a flow sequence with exactly 1 KV pair.
+                 *
+                 *  See:
+                 *      yaml.org/spec/1.2.2/#example-flow-mapping-adjacent-values
+                 */
+                Marker::Key =>
+                {
+                    pop!(tokens)?;
+
+                    event =
+                        initEvent!(@event FlowMappingStart => (start, end, (NO_ANCHOR, NO_TAG, NodeKind::Entry)))
+                            .into();
+
+                    state!(~self, -> State::FlowSequenceMappingKey);
+                },
+                // If its not a mapping, or a sequence end, then it must be a node
+                t if !matches!(t, Marker::FlowSequenceEnd) =>
+                {
+                    // Save our sequence state to the stack
+                    state!(~self, >> State::FlowSequenceEntry(O_NIL));
+
+                    // Forward to node() to determine our next state
+                    event = self.node(tokens, !BLOCK_CONTEXT, kind)?;
+                },
+                // Otherwise, this must be a sequence end
+                _ => event = fetch_sequence_end(self, tokens, start, end).map(Some)?,
+            }
+        }
+        // Otherwise, it was a sequence end
+        else
+        {
+            event = fetch_sequence_end(self, tokens, start, end).map(Some)?;
+        }
+
+        Ok(event)
     }
 
     /// Flow mapping key with parent flow sequence, return
@@ -465,7 +695,115 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Key;
+        let first = opts.contains(O_FIRST);
+
+        // If this is the first entry, we need to skip the
+        // MappingStart token
+        if first
+        {
+            let token = pop!(tokens).map(|entry| entry.marker())?;
+
+            debug_assert!(matches!(token, Marker::FlowMappingStart));
+        }
+
+        let (start, end, token) = peek!(tokens)?;
+
+        // If this isn't the end of the mapping, process KV entries
+        if !matches!(token, Marker::FlowMappingEnd)
+        {
+            /*
+             * If its not the first entry, there *must* be a
+             * FlowEntry indicator (',') e.g:
+             *
+             * { key: value, another: key }
+             *  ^          ^
+             *  |          But the rest must have an entry
+             *  Okay to skip the first ','
+             */
+            if !first
+            {
+                match token
+                {
+                    Marker::FlowEntry => pop!(tokens)?,
+                    _ => return Err(Error::MissingFlowMappingEntryOrEnd),
+                };
+            }
+
+            let (start, end, token) = peek!(tokens)?;
+
+            match token
+            {
+                // Definitely have a key, determine what kind
+                Marker::Key =>
+                {
+                    let (start, _, token) = pop!(tokens).and_then(|_| peek!(tokens))?;
+
+                    /*
+                     * If the token is one of these, then we must add an
+                     * empty key as one is implied by the stream,
+                     * e.g:
+                     *
+                     * { : a value, another: value }
+                     *  ^ key is implied here
+                     */
+                    let empty = matches!(
+                        token,
+                        Marker::Value | Marker::FlowEntry | Marker::FlowMappingEnd
+                    );
+
+                    // Not empty, push state to stack and forward to node()
+                    if !empty
+                    {
+                        state!(~self, >> State::FlowMappingValue(O_NIL));
+
+                        event = self.node(tokens, !BLOCK_CONTEXT, kind)?;
+                    }
+                    // Empty, generate an empty scalar
+                    else
+                    {
+                        state!(~self, -> State::FlowMappingValue(O_NIL));
+
+                        event = self.empty_scalar(start, kind).map(Some)?;
+                    }
+                },
+                /*
+                 * Here we catch a strange edge case in (flow contexts) YAML:
+                 *
+                 * { hello }
+                 *        ^ Note the complete lack of *both* entry and value
+                 *          indicators.
+                 *
+                 *  YAML, God bless its soul, allows this, translated to:
+                 *
+                 *  { hello: "" }
+                 *
+                 *  as the value is "implied" by the lack of an entry (',')
+                 *  delimiter and the closing brace.
+                 *
+                 *  Please don't take away that this is a good idea to use
+                 *  in your YAML documents.
+                 */
+                t if !matches!(t, Marker::FlowMappingEnd) =>
+                {
+                    // Set the value state handler to return an empty scalar and
+                    // return control to this handler
+                    state!(~self, >> State::FlowMappingValue(O_EMPTY));
+
+                    event = self.node(tokens, !BLOCK_CONTEXT, kind)?;
+                },
+                // Else we fetch the mapping end
+                _ => event = fetch_mapping_end(self, tokens, start, end).map(Some)?,
+            }
+        }
+        // Otherwise its a mapping end
+        else
+        {
+            event = fetch_mapping_end(self, tokens, start, end).map(Some)?
+        }
+
+        Ok(event)
     }
 
     /// Flow context mapping value, return the appropriate
@@ -478,7 +816,53 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let event;
+        let kind = NodeKind::Value;
+        let (start, _, token) = peek!(tokens)?;
+        let fetch_empty = |this: &mut Self, mark| {
+            state!(~this, -> State::FlowMappingKey(O_NIL));
+
+            this.empty_scalar(mark, kind)
+        };
+
+        // If we're handling the edge case empty value, just return
+        // it
+        if opts.contains(O_EMPTY)
+        {
+            state!(~self, -> State::FlowMappingKey(O_NIL));
+
+            event = self.empty_scalar(start, kind).map(Some)?;
+        }
+        // Got an actual value
+        else if matches!(token, Marker::Value)
+        {
+            let (start, _, token) = pop!(tokens).and_then(|_| peek!(tokens))?;
+
+            /*
+             * Check that the value is real not implied, e.g:
+             *
+             * { key: } or {key: , another: key }
+             *       ^          ^
+             *       Implied values
+             */
+            if !matches!(token, Marker::FlowEntry | Marker::FlowMappingEnd)
+            {
+                state!(~self, >> State::FlowMappingKey(O_NIL));
+
+                event = self.node(tokens, !BLOCK_CONTEXT, kind)?;
+            }
+            // Was implied, return an empty scalar
+            else
+            {
+                event = fetch_empty(self, start).map(Some)?;
+            }
+        }
+        else
+        {
+            event = fetch_empty(self, start).map(Some)?;
+        }
+
+        Ok(event)
     }
 
     /// Produce a node or alias [Event]
@@ -575,6 +959,38 @@ where
     });
 
     Ok((start, end, directives))
+}
+
+fn fetch_sequence_end<'de, T>(
+    this: &mut Parser,
+    tokens: &mut Tokens<'de, T>,
+    start: usize,
+    end: usize,
+) -> Result<Event<'de>>
+where
+    T: Read,
+{
+    state!(~this, << None);
+
+    pop!(tokens)?;
+
+    Ok(initEvent!(@event SequenceEnd => (start, end, ())))
+}
+
+fn fetch_mapping_end<'de, T>(
+    this: &mut Parser,
+    tokens: &mut Tokens<'de, T>,
+    start: usize,
+    end: usize,
+) -> Result<Event<'de>>
+where
+    T: Read,
+{
+    state!(~this, << None);
+
+    pop!(tokens)?;
+
+    Ok(initEvent!(@event MappingEnd => (start, end, ())))
 }
 
 /// Provides an [Iterator] interface to interact with
