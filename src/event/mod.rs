@@ -7,8 +7,8 @@
 use crate::{
     event::{
         error::ParseResult as Result,
-        state::{State, StateMachine},
-        types::{Directives, Event},
+        state::{Flags, State, StateMachine},
+        types::{Directives, Event, NodeKind},
     },
     reader::{PeekReader, Read},
 };
@@ -123,25 +123,223 @@ impl Parser
     {
         match *self.state.top()
         {
-            State::StreamStart => todo!(),
-            State::DocumentStart(opts) => todo!(),
-            State::DocumentContent => todo!(),
-            State::DocumentEnd => todo!(),
-            State::BlockNode => todo!(),
-            State::FlowNode => todo!(),
-            State::BlockSequenceEntry(opts) => todo!(),
-            State::BlockMappingKey(opts) => todo!(),
-            State::BlockMappingValue => todo!(),
-            State::FlowSequenceEntry(opts) => todo!(),
-            State::FlowSequenceMappingKey => todo!(),
-            State::FlowSequenceMappingValue => todo!(),
-            State::FlowSequenceMappingEnd => todo!(),
-            State::FlowMappingKey(opts) => todo!(),
-            State::FlowMappingValue(opts) => todo!(),
+            State::StreamStart => self.stream_start(tokens),
+            State::DocumentStart(opts) => self.document_start(tokens, opts),
+            State::DocumentContent => self.explicit_document_content(tokens),
+            State::DocumentEnd => self.document_end(tokens),
+            State::BlockNode => self.node(tokens, BLOCK_CONTEXT, NodeKind::Root),
+            State::FlowNode => self.node(tokens, !BLOCK_CONTEXT, NodeKind::Root),
+            State::BlockSequenceEntry(opts) => self.block_sequence_entry(tokens, opts),
+            State::BlockMappingKey(opts) => self.block_mapping_key(tokens, opts),
+            State::BlockMappingValue => self.block_mapping_value(tokens),
+            State::FlowSequenceEntry(opts) => self.flow_sequence_entry(tokens, opts),
+            State::FlowSequenceMappingKey => self.flow_sequence_entry_mapping_key(tokens),
+            State::FlowSequenceMappingValue => self.flow_sequence_entry_mapping_value(tokens),
+            State::FlowSequenceMappingEnd => self.flow_sequence_entry_mapping_end(tokens),
+            State::FlowMappingKey(opts) => self.flow_mapping_key(tokens, opts),
+            State::FlowMappingValue(opts) => self.flow_mapping_value(tokens, opts),
 
             // State machine terminus, no more events will be produced by this parser
-            State::StreamEnd => todo!(),
+            State::StreamEnd => self.stream_end(tokens),
         }
+    }
+
+    /// Start of token stream, ensure the underlying Read
+    /// stream hasn't been tampered with, and return the
+    /// associated Event
+    fn stream_start<'de, T>(&mut self, tokens: &mut Tokens<'de, T>) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// End of token stream, set ourself to done and produce
+    /// the associated Event, if we haven't already
+    fn stream_end<'de, T>(&mut self, tokens: &mut Tokens<'de, T>) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Start of a new document, process any directives,
+    /// determine if it's explicit and prime the state
+    /// machine accordingly, returning the associated
+    /// Event if appropriate
+    fn document_start<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        opts: Flags,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// End of document, determine if its explicit, and
+    /// return the associated Event
+    fn document_end<'de, T>(&mut self, tokens: &mut Tokens<'de, T>) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Handle an explicit, maybe empty document returning
+    /// the root node [Event] if appropriate, or nothing
+    /// if the document is empty.
+    fn explicit_document_content<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Block context sequence entry, return the associated
+    /// node or sequence end [Event]
+    fn block_sequence_entry<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        opts: Flags,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Block context mapping key, return the appropriate
+    /// node or mapping end [Event], pushing a mapping value
+    /// state to the stack in the former case
+    fn block_mapping_key<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        opts: Flags,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Block context mapping value, return the appropriate
+    /// node or mapping end [Event], pushing a mapping key
+    /// state to the stack in the former case
+    fn block_mapping_value<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Flow context sequence entry, return the associated
+    /// node or sequence end [Event]
+    fn flow_sequence_entry<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        opts: Flags,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Flow mapping key with parent flow sequence, return
+    /// the associated node [Event] and prep the tight state
+    /// loop for flow_sequence->flow_mapping token sequences
+    fn flow_sequence_entry_mapping_key<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Flow mapping value with parent flow sequence, return
+    /// the associated node [Event] and push a
+    /// FlowSequenceMappingEnd to the state stack.
+    ///
+    /// Note it is an invariant of this function that it
+    /// must *always* push the above state to the stack
+    /// -- excluding in error cases.
+    fn flow_sequence_entry_mapping_value<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Clean up after a flow_sequence->flow_mapping state
+    /// loop, returning the appropriate mapping end [Event]
+    fn flow_sequence_entry_mapping_end<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Flow context mapping key, return the appropriate
+    /// node or mapping end [Event], pushing a mapping value
+    /// state to the stack in the former case
+    fn flow_mapping_key<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        opts: Flags,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Flow context mapping value, return the appropriate
+    /// node or mapping end [Event]
+    fn flow_mapping_value<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        opts: Flags,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Produce a node or alias [Event]
+    fn node<'de, T>(
+        &mut self,
+        tokens: &mut Tokens<'de, T>,
+        block: bool,
+        kind: NodeKind,
+    ) -> Result<Option<Event<'de>>>
+    where
+        T: Read,
+    {
+        todo!()
+    }
+
+    /// Produce an empty scalar node [Event], always returns
+    /// Ok, the Result is mostly for compose-ability
+    fn empty_scalar(&mut self, mark: usize, kind: NodeKind) -> Result<Event<'static>>
+    {
+        todo!()
     }
 }
 
@@ -175,3 +373,5 @@ where
         self.parser.next_event(self.reader)
     }
 }
+
+const BLOCK_CONTEXT: bool = true;
