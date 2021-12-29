@@ -4,11 +4,13 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+use std::array::IntoIter as ArrayIter;
+
 use crate::{
     event::{
         error::{ParseError as Error, ParseResult as Result},
-        state::{Flags, State, StateMachine, O_FIRST, O_IMPLICIT},
-        types::{Directives, Event, EventData, NodeKind, EMPTY_SCALAR},
+        state::{Flags, State, StateMachine, O_FIRST, O_IMPLICIT, O_NIL},
+        types::{Directives, Event, EventData, NodeKind, DEFAULT_TAGS, EMPTY_SCALAR},
     },
     reader::{PeekReader, Read},
     token::{Marker, Slice},
@@ -194,7 +196,99 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let mut event = None;
+        let implicit = opts.contains(O_IMPLICIT);
+        let first = opts.contains(O_FIRST);
+
+        // If the document is explicit we need to skip any extra
+        // DocumentEnd tokens ('...')
+        if !implicit
+        {
+            while peek!(~tokens)? == Marker::DocumentEnd
+            {
+                pop!(tokens)?;
+            }
+        }
+
+        let token = peek!(~tokens)?;
+        let markers = matches!(
+            token,
+            Marker::TagDirective
+                | Marker::VersionDirective
+                | Marker::DocumentStart
+                | Marker::StreamEnd
+        );
+
+        // Implicit, non empty document, no directives
+        if implicit && !markers
+        {
+            // Retrieve any directives for the current document, merged
+            // with the defaults
+            let (start, end, directives) =
+                scan_document_directives(tokens, ArrayIter::new(DEFAULT_TAGS))?;
+
+            let Directives { version, tags } = directives;
+            event =
+                initEvent!(@event DocumentStart => (start, end, (version, tags, !EXPLICIT))).into();
+
+            // Enqueue State.DocumentEnd, set active to State.BlockNode
+            state!(~self, >> State::DocumentEnd, -> State::BlockNode);
+        }
+        // Explicit document, maybe with directives
+        else if !matches!(token, Marker::StreamEnd)
+        {
+            // Retrieve any directives for the current document, merged
+            // with the defaults
+            let (start, _, directives) =
+                scan_document_directives(tokens, ArrayIter::new(DEFAULT_TAGS))?;
+
+            // Ensure we have an explicit DocumentStart indicator
+            let end = match peek!(~tokens)?
+            {
+                Marker::DocumentStart => pop!(tokens).map(|entry| entry.read_at()),
+                _ => Err(Error::MissingDocumentStart),
+            }?;
+
+            let Directives { version, tags } = directives;
+            event =
+                initEvent!(@event DocumentStart => (start, end, (version, tags, EXPLICIT))).into();
+
+            // Enqueue State.DocumentEnd, set active to
+            // State.DocumentContent
+            state!(~self, >> State::DocumentEnd, -> State::DocumentContent);
+        }
+        // We always return at least one document event pair, even if the stream is empty
+        else if first
+        {
+            let (start, end, directives) =
+                scan_document_directives(tokens, ArrayIter::new(DEFAULT_TAGS))?;
+
+            let Directives { version, tags } = directives;
+            event =
+                initEvent!(@event DocumentStart => (start, end, (version, tags, !EXPLICIT))).into();
+
+            // document_end returns control to us after event
+            // production, so our stream_end branch (below)
+            // will fire and activate stream_end
+            state!(~self, -> State::DocumentEnd);
+        }
+        // Stream end, transition state machine to final state
+        else
+        {
+            state!(~self, -> State::StreamEnd);
+        }
+
+        // Set the Parser's active directives to the
+        // upcoming document's
+        if let Some(EventData::DocumentStart(doc)) = event.as_ref().map(|event| event.data())
+        {
+            let version = doc.directives.version;
+            let tags = doc.directives.tags.iter().map(tags_to_owned).collect();
+
+            self.directives = Directives { version, tags };
+        }
+
+        Ok(event)
     }
 
     /// End of document, determine if its explicit, and
@@ -203,7 +297,30 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        let (event, opts);
+        let (start, mut end, token) = peek!(tokens)?;
+        let mut implicit = true;
+
+        if matches!(token, Marker::DocumentEnd)
+        {
+            implicit = false;
+            pop!(tokens)?;
+        }
+        else
+        {
+            // If the token isn't a DocumentEnd, then this Event is
+            // "virtual" and has no real length
+            end = start;
+        }
+
+        // If this the DocumentEnd was implicit then the next
+        // document start must be explicit
+        opts = implicit.then(|| O_NIL).unwrap_or(O_IMPLICIT);
+        state!(~self, -> State::DocumentStart(opts));
+
+        event = initEvent!(@event DocumentEnd => (start, end, implicit));
+
+        Ok(Some(event))
     }
 
     /// Handle an explicit, maybe empty document returning
@@ -216,7 +333,30 @@ impl Parser
     where
         T: Read,
     {
-        todo!()
+        use Marker::*;
+        let token = peek!(~tokens)?;
+
+        // Check if the next token indicates an empty document
+        let empty = matches!(
+            token,
+            VersionDirective | TagDirective | DocumentStart | DocumentEnd | StreamEnd
+        );
+
+        // The document might be empty, in which case skip event
+        // production, pop the state stack and return control to the
+        // state machine loop
+        if empty
+        {
+            // Pop the state stack
+            state!(~self, << None);
+
+            Ok(None)
+        }
+        // Otherwise, process the document's node graph
+        else
+        {
+            self.node(tokens, BLOCK_CONTEXT, NodeKind::Root)
+        }
     }
 
     /// Block context sequence entry, return the associated
@@ -365,6 +505,78 @@ impl Parser
     }
 }
 
+/// Fetch all adjacent YAML directives from the stream,
+/// merging them with the provided default_directives,
+/// returning the the start + end stream marks, and the
+/// directives themselves.
+fn scan_document_directives<'a: 'de, 'de, I, T>(
+    tokens: &mut Tokens<'de, T>,
+    default_directives: I,
+) -> Result<(usize, usize, Directives<'de>)>
+where
+    I: Iterator<Item = (Slice<'a>, Slice<'a>)>,
+    T: Read,
+{
+    #[allow(unused_assignments)]
+    let (start, mut end, mut token) = peek!(tokens)?;
+
+    let mut directives = Directives::default();
+    let mut seen_version = false;
+
+    let tags = &mut directives.tags;
+    let version = &mut directives.version;
+
+    loop
+    {
+        token = peek!(~tokens)?;
+
+        match token
+        {
+            Marker::VersionDirective if !seen_version =>
+            {
+                seen_version = true;
+
+                *version = {
+                    let (_, new_end, version) = consume!(tokens, VersionDirective)?;
+                    end = new_end;
+
+                    version
+                }
+            },
+            Marker::VersionDirective => return Err(Error::DuplicateVersion),
+
+            Marker::TagDirective =>
+            {
+                let (_, new_end, (handle, prefix)) = consume!(tokens, TagDirective)?;
+
+                /*
+                 * %TAG directives with the same handle are an error
+                 *
+                 * See:
+                 *  yaml.org/spec/1.2.2/#682-tag-directives
+                 */
+                if tags.get(&handle).is_some()
+                {
+                    return Err(Error::DuplicateTagDirective);
+                }
+
+                end = new_end;
+                tags.insert(handle, prefix);
+            },
+
+            _ => break,
+        }
+    }
+
+    // Insert any missing default directives, but do not
+    // overwrite existing values
+    default_directives.for_each(|(handle, prefix)| {
+        tags.entry(handle).or_insert(prefix);
+    });
+
+    Ok((start, end, directives))
+}
+
 /// Provides an [Iterator] interface to interact with
 /// [Event]s through.
 #[derive(Debug)]
@@ -396,6 +608,7 @@ where
     }
 }
 
+const EXPLICIT: bool = false;
 const BLOCK_CONTEXT: bool = true;
 const NO_ANCHOR: Option<Slice<'static>> = None;
 const NO_TAG: Option<(Slice<'static>, Slice<'static>)> = None;
