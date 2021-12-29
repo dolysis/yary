@@ -200,7 +200,7 @@ impl PartialEq<Token<'_>> for Marker
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StreamEncoding
 {
     UTF8,

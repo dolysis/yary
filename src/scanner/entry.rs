@@ -117,7 +117,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lazy<'de>
 {
     inner: LazyImpl<'de>,
@@ -160,7 +160,7 @@ impl<'de> From<block::Deferred<'de>> for Lazy<'de>
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum LazyImpl<'de>
 {
     ScalarF(flow::Deferred<'de>),
