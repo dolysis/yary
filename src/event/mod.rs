@@ -1307,3 +1307,45 @@ const EXPLICIT: bool = false;
 const BLOCK_CONTEXT: bool = true;
 const NO_ANCHOR: Option<Slice<'static>> = None;
 const NO_TAG: Option<(Slice<'static>, Slice<'static>)> = None;
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use crate::reader::borrow::BorrowReader;
+
+    #[macro_use]
+    mod macros;
+
+    struct ParseIter<'de>
+    {
+        tokens: Tokens<'de, BorrowReader<'de>>,
+        parser: Parser,
+    }
+
+    impl<'de> ParseIter<'de>
+    {
+        fn new(tokens: Tokens<'de, BorrowReader<'de>>) -> Self
+        {
+            Self {
+                tokens,
+                parser: Parser::new(),
+            }
+        }
+
+        fn next_event(&mut self) -> Result<Option<Event<'de>>>
+        {
+            self.parser.get_next_event(&mut self.tokens)
+        }
+    }
+
+    impl<'de> Iterator for ParseIter<'de>
+    {
+        type Item = Result<Event<'de>>;
+
+        fn next(&mut self) -> Option<Self::Item>
+        {
+            self.next_event().transpose()
+        }
+    }
+}
