@@ -16,7 +16,7 @@ use std::ops::{Add, AddAssign};
 /// Vessel for tracking various stats about the underlying
 /// buffer that are required for correct parsing of certain
 /// elements, and when contextualizing an error.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(in crate::scanner) struct MStats
 {
     /// Amount of bytes read from the underlying byte stream
@@ -46,18 +46,6 @@ impl MStats
         {
             0 => self.column += column,
             _ => self.column = column,
-        }
-    }
-}
-
-impl Default for MStats
-{
-    fn default() -> Self
-    {
-        Self {
-            read:   0,
-            lines:  0,
-            column: 0,
         }
     }
 }
