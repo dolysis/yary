@@ -64,7 +64,8 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           profile: minimal
-          override: true
+          default: true
+          components: rustfmt,clippy
 
       # Rebuild cache
       - name: Cache cargo registry
