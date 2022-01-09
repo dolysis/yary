@@ -7,7 +7,7 @@ on:
 
 jobs:
   prtasks:
-    name: "[${{ matrix.os }}] ${{ matrix.cargo.name }}"
+    name: "[${{ matrix.os }}/${{ matrix.rust }}] ${{ matrix.cargo.name }}"
     runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
@@ -23,13 +23,13 @@ jobs:
           - name: "Unit Tests"
             cmd: test
             args: --lib --bins
-          - name: "Unit Tests: feature.test_lazy"
+          - name: "Unit Tests {test_lazy}"
             cmd: test
             args: --lib --features=test_lazy
-          - name: "Unit Tests: feature.test_buffer_small"
+          - name: "Unit Tests {test_buffer_small}"
             cmd: test
             args: --lib --features=test_buffer_small
-          - name: "Unit Tests: feature.test_buffer_small,test_lazy"
+          - name: "Unit Tests {test_buffer_small,test_lazy}"
             cmd: test
             args: --lib --features=test_buffer_small,test_lazy
         include:
