@@ -45,7 +45,7 @@ macro_rules! tokens {
 macro_rules! event {
     ($args:tt $(, $start:expr)? $(=> $end:expr)? ) => {{
         #[allow(unused_imports)]
-        use $crate::event::types::{Event, EventData, self};
+        use types::{Event, EventData, self};
 
         let (start, end) = event!(@marks $($start ,)? 0 => $($end ,)? 0);
         Event::new(start, end, event!(@type $args))
@@ -65,10 +65,10 @@ macro_rules! event {
                 directives: types::Directives {
                     version: event!(@option
                         $( types::VersionDirective { major: $major, minor: $minor } ,)?
-                        $crate::event::types::DEFAULT_VERSION
+                        types::DEFAULT_VERSION
                     ),
                     tags: std::iter::FromIterator::from_iter(
-                        std::array::IntoIter::new($crate::event::DEFAULT_TAGS).chain(vec![
+                        std::array::IntoIter::new(types::DEFAULT_TAGS).chain(vec![
                                 $($( ($crate::token::Slice::from($handle), $crate::token::Slice::from($prefix)) ),*)?
                     ])),
                 },
@@ -117,10 +117,10 @@ macro_rules! event {
     (@explicit explicit $(, $_op:tt )? ) =>  { true };
     (@explicit $_:tt $(, $_op:tt )? ) => { false };
 
-    (@kind Root) => { $crate::event::types::NodeKind::Root };
-    (@kind Entry) => { $crate::event::types::NodeKind::Entry };
-    (@kind Key) => { $crate::event::types::NodeKind::Key };
-    (@kind Value) => { $crate::event::types::NodeKind::Value };
+    (@kind Root) => { types::NodeKind::Root };
+    (@kind Entry) => { types::NodeKind::Entry };
+    (@kind Key) => { types::NodeKind::Key };
+    (@kind Value) => { types::NodeKind::Value };
 }
 
 /// Generate a Node from the given .content and .kind, with
@@ -136,7 +136,7 @@ macro_rules! event {
 ///         := /1 .content, @ .kind & None, @ None
 macro_rules! node {
     ($content:expr, @$kind:tt) => {
-        $crate::event::types::Node {
+        types::Node {
             anchor:  None,
             tag:     None,
             content: $content,
@@ -144,7 +144,7 @@ macro_rules! node {
         }
     };
     ($content:expr, @$kind:tt @ $handle:expr, $suffix:expr) => {
-        $crate::event::types::Node {
+        types::Node {
             anchor:  None,
             tag:     Some((
                 $crate::token::Slice::from($handle),
@@ -155,7 +155,7 @@ macro_rules! node {
         }
     };
     ($content:expr, @$kind:tt & $alias:expr) => {
-        $crate::event::types::Node {
+        types::Node {
             anchor:  Some($crate::token::Slice::from($alias)),
             tag:     None,
             content: $content,
@@ -163,7 +163,7 @@ macro_rules! node {
         }
     };
     ($content:expr, @$kind:tt & $alias:expr, @ $handle:expr, $suffix:expr) => {
-        $crate::event::types::Node {
+        types::Node {
             anchor:  Some($crate::token::Slice::from($alias)),
             tag:     Some((
                 $crate::token::Slice::from($handle),
@@ -174,10 +174,10 @@ macro_rules! node {
         }
     };
 
-    (@kind Root) => { $crate::event::types::NodeKind::Root };
-    (@kind Entry) => { $crate::event::types::NodeKind::Entry };
-    (@kind Key) => { $crate::event::types::NodeKind::Key };
-    (@kind Value) => { $crate::event::types::NodeKind::Value };
+    (@kind Root) => { types::NodeKind::Root };
+    (@kind Entry) => { types::NodeKind::Entry };
+    (@kind Key) => { types::NodeKind::Key };
+    (@kind Value) => { types::NodeKind::Value };
 }
 
 /// Generate a Scalar from the given string .content and
@@ -191,16 +191,16 @@ macro_rules! node {
 ///     /2 .content := /1 .content, ScalarStyle::Plain
 macro_rules! scalar {
     (~ $content:expr $(, $style:expr)? ) => {
-        $crate::event::types::Content::Scalar( scalar!($content $(, $style)?) )
+        types::Content::Scalar( scalar!($content $(, $style)?) )
     };
     ($content:expr) => {
-        $crate::event::types::Scalar::Eager {
+        types::Scalar::Eager {
             data:  $crate::token::Slice::from($content),
             style: $crate::token::ScalarStyle::Plain,
         }
     };
     ($content:expr, $style:expr) => {
-        $crate::event::types::Scalar::Eager {
+        types::Scalar::Eager {
             data:  $crate::token::Slice::from($content),
             style: $style,
         }
