@@ -4,6 +4,36 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+//! This module exposes the [`Parser`] struct and related
+//! types. The Parser takes a sequence of [`Token`]s
+//! produced by a generic [`Read`] interface, and converts
+//! them into a series of [`Event`]s. These events are the
+//! core of higher level functionality exposed by this
+//! library.
+//!
+//! ## Invoking the Parser
+//!
+//! Each [`Parser`] must be passed a [`PeekReader`].
+//! PeekReader has a blanket [`From`] impl for any type
+//! implementing [`Read`]. Once passed to a [`Parser`], _it
+//! is a logic error to pass that PeekReader to a different
+//! [`Parser`]_. The outcome is not specified, but will
+//! likely either be garbage or and error.
+//!
+//! The two interesting methods on a [`Parser`] are:
+//!
+//! 1. [`next_event`](Parser#method.next_event)
+//! 2. [`into_iter`](Parser#method.into_iter)
+//!
+//! Both take one argument, the [`PeekReader`] associated
+//! with this [`Parser`]. The first, `next_event` returns
+//! the next [`Event`] (naturally), while the second,
+//! `into_iter`, returns an interface that implements
+//! [`Iterator`], allowing one to hook into that entire
+//! ecosystem.
+//!
+//! [`Token`]: enum@crate::token::Token
+
 use std::array::IntoIter as ArrayIter;
 
 use crate::{
@@ -23,8 +53,8 @@ mod macros;
 
 type Tokens<'de, T> = PeekReader<'de, T>;
 
-/// The [Parser] provides an API for translating any
-/// [Token] [Read] stream into higher level [Event]s.
+/// The [`Parser`] provides an API for translating any
+/// [`Token`] [`Read`] stream into higher level [`Event`]s.
 ///
 /// The two primary methods of of interest on this
 /// struct are:
@@ -33,17 +63,18 @@ type Tokens<'de, T> = PeekReader<'de, T>;
 /// 2. [into_iter](#method.into_iter)
 ///
 /// The first provides an interface for retrieving the
-/// next [Event] from the given [Read]er, while the
-/// latter provides an [Iterator] based interface to
-/// retrieve [Event]s from, reusing the provided [Read]er.
+/// next [`Event`] from the given [`Read`]er, while the
+/// latter provides an [`Iterator`] based interface to
+/// retrieve [`Event`]s from, reusing the provided
+/// [`Read`]er.
 ///
-/// A Parser can iteratively consume an entire [Token]
+/// A Parser can iteratively consume an entire [`Token`]
 /// stream ending when `Token::StreamEnd` is found, after
 /// which the Parser considers the stream finished and
 /// always returns None.
 ///
-/// [Token]: enum@crate::token::Token
-/// [Read]: trait@crate::reader::Read
+/// [`Token`]: enum@crate::token::Token
+/// [`Read`]: trait@crate::reader::Read
 #[derive(Debug, Clone)]
 pub struct Parser
 {
@@ -55,7 +86,7 @@ pub struct Parser
 
 impl Parser
 {
-    /// Instantiate a new [Parser], ready for a new token
+    /// Instantiate a new [`Parser`], ready for a new token
     /// stream.
     pub fn new() -> Self
     {
@@ -66,13 +97,13 @@ impl Parser
         }
     }
 
-    /// Fetch the next [Event] from the provided .tokens
+    /// Fetch the next [`Event`] from the provided .tokens
     /// stream.
     ///
     /// Note that once you call this method, the associated
-    /// .tokens is "bound" to this [Parser], and should not
-    /// be provided to anything else which modifies the
-    /// stream, including a different [Parser].
+    /// .tokens is "bound" to this [`Parser`], and should
+    /// not be provided to anything else which modifies
+    /// the stream, including a different [`Parser`].
     pub fn next_event<'de, T>(&mut self, tokens: &mut Tokens<'de, T>) -> Option<Result<Event<'de>>>
     where
         T: Read,
@@ -80,8 +111,8 @@ impl Parser
         self.get_next_event(tokens).transpose()
     }
 
-    /// Provides an [Iterator] interface to this [Parser],
-    /// via the given .tokens
+    /// Provides an [`Iterator`] interface to this
+    /// [`Parser`], via the given .tokens
     #[allow(clippy::wrong_self_convention)]
     pub fn into_iter<'a, 'b, 'de, T>(
         &'a mut self,
@@ -94,7 +125,7 @@ impl Parser
     }
 
     /// Runs the state machine until it either provides the
-    /// next [Event], an error, or the state machine is
+    /// next [`Event`], an error, or the state machine is
     /// finished
     fn get_next_event<'de, T>(&mut self, tokens: &mut Tokens<'de, T>) -> Result<Option<Event<'de>>>
     where
@@ -321,7 +352,7 @@ impl Parser
     }
 
     /// Handle an explicit, maybe empty document returning
-    /// the root node [Event] if appropriate, or nothing
+    /// the root node [`Event`] if appropriate, or nothing
     /// if the document is empty.
     fn explicit_document_content<'de, T>(
         &mut self,
@@ -357,7 +388,7 @@ impl Parser
     }
 
     /// Block context sequence entry, return the associated
-    /// node or sequence end [Event]
+    /// node or sequence end [`Event`]
     fn block_sequence_entry<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -426,8 +457,8 @@ impl Parser
     }
 
     /// Block context mapping key, return the appropriate
-    /// node or mapping end [Event], pushing a mapping value
-    /// state to the stack in the former case
+    /// node or mapping end [`Event`], pushing a mapping
+    /// value state to the stack in the former case
     fn block_mapping_key<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -491,7 +522,7 @@ impl Parser
     }
 
     /// Block context mapping value, return the appropriate
-    /// node or mapping end [Event], pushing a mapping key
+    /// node or mapping end [`Event`], pushing a mapping key
     /// state to the stack in the former case
     fn block_mapping_value<'de, T>(
         &mut self,
@@ -540,7 +571,7 @@ impl Parser
     }
 
     /// Flow context sequence entry, return the associated
-    /// node or sequence end [Event]
+    /// node or sequence end [`Event`]
     fn flow_sequence_entry<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -640,8 +671,9 @@ impl Parser
     }
 
     /// Flow mapping key with parent flow sequence, return
-    /// the associated node [Event] and prep the tight state
-    /// loop for flow_sequence->flow_mapping token sequences
+    /// the associated node [`Event`] and prep the tight
+    /// state loop for flow_sequence->flow_mapping token
+    /// sequences
     fn flow_sequence_entry_mapping_key<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -688,7 +720,7 @@ impl Parser
     }
 
     /// Flow mapping value with parent flow sequence, return
-    /// the associated node [Event] and push a
+    /// the associated node [`Event`] and push a
     /// FlowSequenceMappingEnd to the state stack.
     ///
     /// Note it is an invariant of this function that it
@@ -729,7 +761,8 @@ impl Parser
     }
 
     /// Clean up after a flow_sequence->flow_mapping state
-    /// loop, returning the appropriate mapping end [Event]
+    /// loop, returning the appropriate mapping end
+    /// [`Event`]
     fn flow_sequence_entry_mapping_end<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -750,8 +783,8 @@ impl Parser
     }
 
     /// Flow context mapping key, return the appropriate
-    /// node or mapping end [Event], pushing a mapping value
-    /// state to the stack in the former case
+    /// node or mapping end [`Event`], pushing a mapping
+    /// value state to the stack in the former case
     fn flow_mapping_key<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -872,7 +905,7 @@ impl Parser
     }
 
     /// Flow context mapping value, return the appropriate
-    /// node or mapping end [Event]
+    /// node or mapping end [`Event`]
     fn flow_mapping_value<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -930,7 +963,7 @@ impl Parser
         Ok(event)
     }
 
-    /// Produce a node or alias [Event]
+    /// Produce a node or alias [`Event`]
     fn node<'de, T>(
         &mut self,
         tokens: &mut Tokens<'de, T>,
@@ -1053,8 +1086,9 @@ impl Parser
         Ok(event)
     }
 
-    /// Produce an empty scalar node [Event], always returns
-    /// Ok, the Result is mostly for compose-ability
+    /// Produce an empty scalar node [`Event`], always
+    /// returns Ok, the Result is mostly for
+    /// compose-ability
     fn empty_scalar(&mut self, mark: usize, kind: NodeKind) -> Result<Event<'static>>
     {
         let event =
@@ -1267,8 +1301,8 @@ fn tags_to_owned<'a>((handle, prefix): (&Slice<'a>, &Slice<'a>))
     (handle.into(), prefix.into())
 }
 
-/// Provides an [Iterator] interface to interact with
-/// [Event]s through.
+/// Provides an [`Iterator`] interface to interact with
+/// [`Event`]s through.
 #[derive(Debug)]
 pub struct EventIter<'a, 'b, 'de, T>
 {
