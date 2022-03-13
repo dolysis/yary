@@ -16,7 +16,7 @@ jobs:
           - ubuntu-latest
         rust:
           - stable
-          - 1.52 # Project MSRV
+          - 1.53 # Project MSRV
         cargo:
           - name: "Clippy"
             cmd: clippy
