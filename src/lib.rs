@@ -7,9 +7,10 @@
 #![allow(dead_code)]
 #![allow(clippy::suspicious_else_formatting)]
 
+pub mod event;
+pub mod reader;
+
 mod error;
-mod event;
 mod queue;
-mod reader;
 mod scanner;
 mod token;
