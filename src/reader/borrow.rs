@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct BorrowReader<'de>
+pub struct BorrowReader<'de>
 {
     data: &'de str,
 }
