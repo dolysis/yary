@@ -20,7 +20,7 @@ use crate::{
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(Debug)]
-pub(crate) struct OwnedReader
+pub struct OwnedReader
 {
     inner: ReadHolder,
 }
