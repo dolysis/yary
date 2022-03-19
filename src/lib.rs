@@ -17,6 +17,7 @@
 
 #![allow(dead_code)]
 #![allow(clippy::suspicious_else_formatting)]
+#![warn(missing_docs)]
 
 pub use error::Error;
 
