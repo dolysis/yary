@@ -11,9 +11,9 @@ pub type Slice<'a> = std::borrow::Cow<'a, str>;
 pub enum Token<'a>
 {
     /// The stream's start, with the byte (encoding)
-    /// [virtual]
+    /// {virtual}
     StreamStart(StreamEncoding),
-    /// The stream's end [virtual]
+    /// The stream's end {virtual}
     StreamEnd,
     /// The %YAML directive, (major,minor)
     VersionDirective(u8, u8),
@@ -99,9 +99,9 @@ impl<'a> Token<'a>
 pub enum Marker
 {
     /// The stream's start, with the byte (encoding)
-    /// [virtual]
+    /// {virtual}
     StreamStart,
-    /// The stream's end [virtual]
+    /// The stream's end {virtual}
     StreamEnd,
     /// The %YAML directive, (major,minor)
     VersionDirective,
