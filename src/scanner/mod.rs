@@ -924,7 +924,7 @@ impl Scanner
     }
 
     /// Chomp whitespace and optionally comments until we
-    /// reach the next token, updating buffer[0] to the
+    /// reach the next token, updating .buffer to the
     /// beginning of the new token
     fn eat_whitespace(&mut self, opts: Flags, buffer: &mut &str, comments: bool) -> Result<usize>
     {

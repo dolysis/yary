@@ -430,8 +430,7 @@ where
     }
 }
 
-/// Helper function for constructing
-/// [Ref][Ref]<[Token::Tag][Token]>s
+/// Helper function for constructing [Token::Tag](Token)s
 fn assemble_tag<'de>(handle: &'de str, suffix: Slice<'de>, can_borrow: bool) -> Token<'de>
 {
     if can_borrow
