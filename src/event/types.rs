@@ -14,13 +14,48 @@ use crate::{
     token::Token,
 };
 
+/// Copy on write representation of YAML data content.
+///
+/// Currently, it is a typedef of [`Cow`](std::borrow::Cow),
+/// though this will change in the future.
+///
+/// Most variable data returned in [`Event`]s will be stored
+/// as this type, and where possible, will be borrowed from
+/// the underlying byte stream.
 pub type Slice<'a> = std::borrow::Cow<'a, str>;
 
+/// Default tag directives applied to every YAML document.
+///
+/// Equivalent of:
+///
+/// ```yaml
+/// %TAG !    !
+/// %TAG !!   tag:yaml.org,2002:
+/// ```
+///
+/// These are always in scope, though documents may
+/// expressly override them
 pub const DEFAULT_TAGS: [(Slice<'static>, Slice<'static>); 2] = [
     (Cow::Borrowed("!"), Cow::Borrowed("!")),
     (Cow::Borrowed("!!"), Cow::Borrowed("tag:yaml.org,2002:")),
 ];
+
+/// Default YAML stream version. If unspecified in the
+/// stream it is assumed to be this version.
+///
+/// Equivalent of:
+///
+/// ```yaml
+/// %YAML 1.2
+/// ```
 pub const DEFAULT_VERSION: VersionDirective = VersionDirective { major: 1, minor: 2 };
+
+/// An empty YAML scalar.
+///
+/// In many circumstances, a YAML node is implied by the
+/// stream state, though it may not appear in the stream
+/// directly. This constant is the representation of such
+/// nodes.
 pub const EMPTY_SCALAR: ScalarLike<'static> = ScalarLike::empty();
 
 /// Specific YAML productions found in the YAML stream. Each
@@ -37,6 +72,8 @@ pub struct Event<'de>
 
 impl<'de> Event<'de>
 {
+    /// Instantiate a new [`Event`] with the given marks and
+    /// data
     pub fn new(start_mark: usize, end_mark: usize, event: EventData<'de>) -> Self
     {
         Self {
@@ -46,21 +83,26 @@ impl<'de> Event<'de>
         }
     }
 
+    /// Retrieve the start mark of this [`Event`]
     pub fn start(&self) -> usize
     {
         self.start_mark
     }
 
+    /// Retrieve the end mark of this [`Event`]
     pub fn end(&self) -> usize
     {
         self.end_mark
     }
 
+    /// Retrieve the data associated with this [`Event`]
     pub fn data(&self) -> &EventData<'de>
     {
         &self.inner
     }
 
+    /// Retrieve the data associated with this [`Event`]
+    /// mutably
     pub fn data_mut(&mut self) -> &mut EventData<'de>
     {
         &mut self.inner
@@ -149,32 +191,68 @@ pub struct Node<'de, T: 'de>
 #[derive(Debug, Clone)]
 pub enum ScalarLike<'de>
 {
+    /// Evaluated scalar, whose contents can be accessed
     Eager(Scalar<'de>),
+    /// Unevaluated potential scalar, which must be
+    /// processed before its contents can be accessed.
+    ///
+    /// See [`evaluate()`](#method.evaluate) for more.
     Lazy(ScalarLazy<'de>),
 }
 
 impl<'de> ScalarLike<'de>
 {
+    /// Evaluate this [`ScalarLike`], returning the
+    /// underlying [`Scalar`].
+    ///
+    /// ## Errors
+    ///
+    /// This method may error if `self == Self::Lazy(_)` and
+    /// the underlying scalar is invalid.
     pub fn evaluate(self) -> Result<Scalar<'de>, crate::Error>
     {
         self.evaluate_scalar().map_err(Into::into)
     }
 
+    /// Evaluate this [`ScalarLike`] by reference, returning
+    /// a reference to the underlying [`Scalar`].
+    ///
+    /// After calling this method it is guaranteed that
+    /// `self == Self::Eager(_)`, though if an error was
+    /// returned the scalar will be empty
+    ///
+    /// ## Errors
+    ///
+    /// This method may error if `self == Self::Lazy(_)` and
+    /// the underlying scalar is invalid.
     pub fn evaluate_by_ref(&mut self) -> Result<&mut Scalar<'de>, crate::Error>
     {
         self.evaluate_scalar_by_ref().map_err(Into::into)
     }
 
+    /// Checks if this scalar has been evaluated
+    ///
+    /// If this returns true it is guaranteed that `self ==
+    /// Self::Eager(_)`
     pub fn is_evaluated(&self) -> bool
     {
         !self.is_lazy()
     }
 
+    /// Checks if this scalar has not been evaluated
+    ///
+    /// If this returns true it is guaranteed that `self ==
+    /// Self::Lazy(_)`
     pub fn is_unevaluated(&self) -> bool
     {
         self.is_lazy()
     }
 
+    /// Private version of `evaluate_by_ref()`,
+    /// returning a less expensive error type.
+    ///
+    /// Library local callers should use this variant, and
+    /// convert the error lazily as needed.
     pub(crate) fn evaluate_scalar_by_ref(&mut self) -> ScanResult<&mut Scalar<'de>>
     {
         let this = std::mem::take(self);
@@ -188,6 +266,11 @@ impl<'de> ScalarLike<'de>
         }
     }
 
+    /// Private version of `evaluate`, returning a less
+    /// expensive error type.
+    ///
+    /// Library local callers should use this variant, and
+    /// convert the error lazily as needed.
     pub(crate) fn evaluate_scalar(self) -> ScanResult<Scalar<'de>>
     {
         match self
@@ -197,11 +280,13 @@ impl<'de> ScalarLike<'de>
         }
     }
 
+    /// Initialize a new, Eager variant
     pub(crate) fn eager(data: Slice<'de>, style: ScalarStyle) -> Self
     {
         Self::Eager(Scalar { data, style })
     }
 
+    /// Initialize a new, Lazy variant
     pub(crate) fn lazy(lazy: Lazy<'de>) -> Self
     {
         Self::Lazy(ScalarLazy { inner: lazy })
@@ -215,6 +300,7 @@ impl<'de> ScalarLike<'de>
 
 impl ScalarLike<'static>
 {
+    /// Instantiate an empty [`ScalarLike`]
     pub const fn empty() -> Self
     {
         Self::Eager(Scalar {
@@ -245,6 +331,11 @@ impl<'de> PartialEq for ScalarLike<'de>
     }
 }
 
+/// Representation of a YAML Scalar, containing the
+/// associated data and style
+///
+/// This struct implements `Deref<Target = str>`, backed by
+/// the underlying data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scalar<'de>
 {
@@ -254,16 +345,20 @@ pub struct Scalar<'de>
 
 impl<'de> Scalar<'de>
 {
+    /// Retrieve the associated data of this [`Scalar`].
     pub fn data(&self) -> &Slice
     {
         &self.data
     }
 
+    /// Mutably retrieve the associated data of this
+    /// [`Scalar`].
     pub fn data_mut(&mut self) -> &mut Slice<'de>
     {
         &mut self.data
     }
 
+    /// Retrieve this [`Scalar`]'s style.
     pub fn style(&self) -> ScalarStyle
     {
         self.style
@@ -288,6 +383,19 @@ impl<'de> std::ops::Deref for Scalar<'de>
     }
 }
 
+/// Opaque wrapper around an unevaluated [`Scalar`].
+///
+/// Typically, an owner of this struct may make one of two
+/// choices:
+///
+/// 1. Evaluate the scalar, handling the potential error
+/// 2. Drop it, permanently deferring computation of the
+///    scalar
+///
+/// This allows owners to potentially avoid paying for
+/// processing that is unnecessary if they can decide based
+/// on some outside criteria whether to evaluate the
+/// underlying scalar.
 #[derive(Debug, Clone)]
 pub struct ScalarLazy<'de>
 {
@@ -296,11 +404,25 @@ pub struct ScalarLazy<'de>
 
 impl<'de> ScalarLazy<'de>
 {
+    /// Consume this struct, retrieving the underlying
+    /// [`Scalar`], or an error.
+    ///
+    /// ## Errors
+    ///
+    /// This method may error if the contents of the scalar
+    /// are either syntactically invalid or if an error was
+    /// encountered when trying to represent them as Rust
+    /// constructs.
     pub fn evaluate(self) -> Result<Scalar<'de>, crate::Error>
     {
         self.evaluate_scalar().map_err(Into::into)
     }
 
+    /// Private version of `evaluate`, returning a less
+    /// expensive error type.
+    ///
+    /// Library local callers should use this variant, and
+    /// convert the error lazily as needed.
     pub(crate) fn evaluate_scalar(self) -> ScanResult<Scalar<'de>>
     {
         self.inner.into_token().map(|t| match t
@@ -363,6 +485,7 @@ pub struct StreamStart
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentStart<'de>
 {
+    /// This document's directive map
     pub directives: Directives<'de>,
     /// Was this event present in the stream, or inferred?
     pub implicit:   bool,
@@ -404,6 +527,7 @@ pub struct Directives<'de>
 
 impl<'de> Directives<'de>
 {
+    /// Instantiate a new, empty directives map
     pub fn empty() -> Self
     {
         Self {
@@ -430,7 +554,9 @@ impl Default for Directives<'_>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VersionDirective
 {
+    /// The major version of this YAML stream
     pub major: u8,
+    /// The minor version of this YAML stream
     pub minor: u8,
 }
 
@@ -438,19 +564,32 @@ pub struct VersionDirective
 /// document
 pub type TagDirectives<'de> = HashMap<Slice<'de>, Slice<'de>>;
 
+/// The encoding of the underlying byte stream.
+///
+/// Currently, and for the forseeable future only `UTF8`
+/// will be supported, though this may change eventually.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamEncoding
 {
+    /// The byte stream is encoded as UTF8
     UTF8,
 }
 
+/// The style of a [`Scalar`], corresponding to the possible
+/// styles supported by YAML
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScalarStyle
 {
+    /// No delimiters, content was detected purely from
+    /// stream context
     Plain,
+    /// Scalar was quoted in single quotes (`''`)
     SingleQuote,
+    /// Scalar was quoted in double quotes (`""`)
     DoubleQuote,
+    /// Scalar was preceded by pipe (`|`)
     Literal,
+    /// Scalar was preceded by an arrow ('>')
     Folded,
 }
 
