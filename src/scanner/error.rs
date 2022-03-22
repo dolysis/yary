@@ -6,6 +6,8 @@
 
 use std::fmt;
 
+use crate::error::internal::ErrorCode;
+
 pub type ScanResult<T> = std::result::Result<T, ScanError>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -94,3 +96,38 @@ impl fmt::Display for ScanError
 }
 
 impl std::error::Error for ScanError {}
+
+impl From<ScanError> for ErrorCode
+{
+    fn from(err: ScanError) -> Self
+    {
+        use ErrorCode::*;
+
+        match err
+        {
+            ScanError::UnknownDirective => UnknownDirective,
+            ScanError::MissingMajor => MissingMajor,
+            ScanError::MissingMinor => MissingMinor,
+            ScanError::MissingValue => MissingValue,
+            ScanError::InvalidVersion => InvalidVersion,
+            ScanError::InvalidTagHandle => InvalidTagHandle,
+            ScanError::InvalidTagPrefix => InvalidTagPrefix,
+            ScanError::InvalidTagSuffix => InvalidTagSuffix,
+            ScanError::InvalidAnchorName => InvalidAnchorName,
+            ScanError::InvalidFlowScalar => InvalidFlowScalar,
+            ScanError::InvalidPlainScalar => InvalidPlainScalar,
+            ScanError::InvalidBlockScalar => InvalidBlockScalar,
+            ScanError::InvalidBlockEntry => InvalidBlockEntry,
+            ScanError::InvalidTab => InvalidTab,
+            ScanError::InvalidKey => InvalidKey,
+            ScanError::InvalidValue => InvalidValue,
+            ScanError::UnknownEscape => UnknownEscape,
+            ScanError::UnknownDelimiter => UnknownDelimiter,
+            ScanError::UnexpectedEOF => UnexpectedEOF,
+            ScanError::IntOverflow => IntOverflow,
+            // If the extend is returned but isn't caught we assume that the calling code could
+            // not extend the buffer after all, and hence was an EOF
+            ScanError::Extend => UnexpectedEOF,
+        }
+    }
+}
