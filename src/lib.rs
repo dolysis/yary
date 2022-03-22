@@ -18,10 +18,12 @@
 #![allow(dead_code)]
 #![allow(clippy::suspicious_else_formatting)]
 
+pub use error::Error;
+
+pub mod error;
 pub mod event;
 pub mod reader;
 
-mod error;
 mod queue;
 mod scanner;
 mod token;
