@@ -13,7 +13,11 @@ use std::{
     str::Utf8Error,
 };
 
-use crate::{reader::ReaderError, scanner::error::ScanError};
+use crate::{
+    error::internal::{ErrorCode, ErrorKind},
+    reader::ReaderError,
+    scanner::error::ScanError,
+};
 
 /// Result type returned by [`yary::event`](super)
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
@@ -241,6 +245,32 @@ impl std::error::Error for ParseError
             Self::UTF8(e) => Some(e),
             Self::IO(e) => Some(e),
             _ => None,
+        }
+    }
+}
+
+impl From<ParseError> for ErrorKind
+{
+    fn from(err: ParseError) -> Self
+    {
+        use ErrorCode::*;
+
+        match err
+        {
+            ParseError::CorruptStream => CorruptStream.into(),
+            ParseError::DuplicateVersion => DuplicateVersion.into(),
+            ParseError::DuplicateTagDirective => DuplicateTagDirective.into(),
+            ParseError::UndefinedTag => UndefinedTag.into(),
+            ParseError::MissingDocumentStart => MissingDocumentStart.into(),
+            ParseError::MissingBlockEntry => MissingBlockEntry.into(),
+            ParseError::MissingNode => MissingNode.into(),
+            ParseError::MissingKey => MissingKey.into(),
+            ParseError::MissingFlowSequenceEntryOrEnd => MissingFlowSequenceEntryOrEnd.into(),
+            ParseError::MissingFlowMappingEntryOrEnd => MissingFlowMappingEntryOrEnd.into(),
+            ParseError::UnexpectedEOF => UnexpectedEOF.into(),
+            ParseError::Scanner(e) => ErrorCode::from(e).into(),
+            ParseError::UTF8(e) => ErrorKind::Source(e.into()),
+            ParseError::IO(e) => ErrorKind::Source(e.into()),
         }
     }
 }
