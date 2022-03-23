@@ -18,6 +18,68 @@ use crate::{
     scanner::{entry::TokenEntry, flag::Flags, Scanner},
 };
 
+/// Instantiate a new [`Read`]er from the given UTF8 string
+/// slice
+///
+/// ## Examples
+///
+/// ```rust
+/// use yary::reader::from_utf8;
+///
+/// let yaml = "{a yaml: mapping}";
+///
+/// let reader = from_utf8(yaml);
+/// ```
+pub fn from_utf8(utf8: &str) -> BorrowReader<'_>
+{
+    BorrowReader::new(utf8)
+}
+
+/// Instantiate a new [`Read`]er from the given
+/// [`std::io::Read`] source.
+///
+/// ## Examples
+///
+/// ```no_run
+/// use std::fs::File;
+///
+/// use yary::reader::from_read;
+///
+/// let file = File::open("config.yaml")?;
+///
+/// let reader = from_read(file);
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub fn from_read<R>(src: R) -> OwnedReader
+where
+    R: std::io::Read + 'static,
+{
+    OwnedReader::new(src)
+}
+
+/// Try instantiate a new [`Read`]er from the given byte
+/// slice.
+///
+/// ## Errors
+///
+/// This function will error if the provided byte slice is
+/// not valid UTF8
+///
+/// ## Examples
+///
+/// ```rust
+/// use yary::reader::try_from_bytes;
+///
+/// let yaml = b"[some, valid, yaml]";
+///
+/// let reader = try_from_bytes(yaml);
+/// assert!(reader.is_ok())
+/// ```
+pub fn try_from_bytes(slice: &[u8]) -> std::result::Result<BorrowReader<'_>, Error>
+{
+    BorrowReader::try_from_bytes(slice).map_err(Into::into)
+}
+
 /// Sealed interface over the functionality that
 /// transforms a byte stream into [Token][crate::token::
 /// Token]s.
@@ -213,9 +275,7 @@ where
 
 mod private
 {
-    pub trait Sealed
-    {
-    }
+    pub trait Sealed {}
 }
 
 #[cfg(test)]
