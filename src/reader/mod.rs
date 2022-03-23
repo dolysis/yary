@@ -4,17 +4,17 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-mod error;
-
 pub mod borrow;
 pub mod owned;
 
-pub use error::{ReaderError, ReaderResult};
-use private::Sealed;
+pub(crate) mod error;
 
 use crate::{
+    error::Error,
     queue::Queue,
-    reader::error::ReaderResult as Result,
+    reader::{
+        borrow::BorrowReader, error::ReaderResult as Result, owned::OwnedReader, private::Sealed,
+    },
     scanner::{entry::TokenEntry, flag::Flags, Scanner},
 };
 
@@ -57,7 +57,7 @@ pub trait Read: std::fmt::Debug + Sealed
 /// tokenizing the byte stream in preparation for
 /// for an Event stream
 #[derive(Debug)]
-pub struct Reader<'de, T: 'de>
+pub(crate) struct Reader<'de, T: 'de>
 {
     scanner: Scanner,
     queue:   Queue<TokenEntry<'de>>,
@@ -128,7 +128,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct PeekReader<'de, T: 'de>
+pub(crate) struct PeekReader<'de, T: 'de>
 {
     peek:   Option<TokenEntry<'de>>,
     reader: Reader<'de, T>,

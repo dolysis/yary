@@ -36,7 +36,7 @@ impl OwnedReader
         Self { inner }
     }
 
-    pub fn new_reader(&self, opts: Flags) -> Reader<'_, Self>
+    pub(crate) fn new_reader(&self, opts: Flags) -> Reader<'_, Self>
     {
         Reader::new(self, opts)
     }

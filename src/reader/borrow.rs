@@ -27,14 +27,14 @@ impl<'de> BorrowReader<'de>
         Self { data }
     }
 
-    pub fn try_from_bytes(data: &'de [u8]) -> Result<Self>
+    pub(crate) fn try_from_bytes(data: &'de [u8]) -> Result<Self>
     {
         let this = std::str::from_utf8(data).map(Self::new)?;
 
         Ok(this)
     }
 
-    pub fn new_reader(&'de self, opts: Flags) -> Reader<'de, Self>
+    pub(crate) fn new_reader(&'de self, opts: Flags) -> Reader<'de, Self>
     {
         Reader::new(self, opts)
     }
