@@ -274,3 +274,11 @@ impl From<ParseError> for ErrorKind
         }
     }
 }
+
+impl From<ParseError> for crate::error::Error
+{
+    fn from(err: ParseError) -> Self
+    {
+        crate::error::mkError!(err, KIND)
+    }
+}
