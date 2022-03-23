@@ -76,7 +76,7 @@ type Tokens<'de, T> = PeekReader<'de, T>;
 /// [`Token`]: enum@crate::token::Token
 /// [`Read`]: trait@crate::reader::Read
 #[derive(Debug, Clone)]
-pub struct Parser
+pub(crate) struct Parser
 {
     state: StateMachine,
 
@@ -1304,7 +1304,7 @@ fn tags_to_owned<'a>((handle, prefix): (&Slice<'a>, &Slice<'a>))
 /// Provides an [`Iterator`] interface to interact with
 /// [`Event`]s through.
 #[derive(Debug)]
-pub struct EventIter<'a, 'b, 'de, T>
+pub(crate) struct EventIter<'a, 'b, 'de, T>
 {
     parser: &'a mut Parser,
     reader: &'b mut Tokens<'de, T>,

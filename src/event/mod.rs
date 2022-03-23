@@ -83,7 +83,8 @@ use crate::{
 mod parser;
 mod state;
 
-pub mod error;
+pub(crate) mod error;
+
 pub mod flag;
 pub mod types;
 

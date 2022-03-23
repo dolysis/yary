@@ -15,17 +15,17 @@ use std::{
 
 use crate::{
     error::internal::{ErrorCode, ErrorKind},
-    reader::ReaderError,
+    reader::error::ReaderError,
     scanner::error::ScanError,
 };
 
 /// Result type returned by [`yary::event`](super)
-pub type ParseResult<T> = std::result::Result<T, ParseError>;
+pub(crate) type ParseResult<T> = std::result::Result<T, ParseError>;
 
 /// Possible errors that can be encountered while parsing
 /// YAML events.
 #[derive(Debug)]
-pub enum ParseError
+pub(crate) enum ParseError
 {
     /// A mismatch between the stream's actual state and
     /// what the parser is expecting occurred.
