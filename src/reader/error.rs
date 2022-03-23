@@ -87,3 +87,11 @@ impl From<ReaderError> for ErrorKind
         }
     }
 }
+
+impl From<ReaderError> for crate::error::Error
+{
+    fn from(err: ReaderError) -> Self
+    {
+        crate::error::mkError!(err, KIND)
+    }
+}
