@@ -71,8 +71,9 @@
 //! [`Read`]:           trait@crate::reader::Read
 
 use crate::{
+    error::Result,
     event::{
-        error::ParseResult as Result,
+        error::ParseResult,
         flag::{Flags, O_NIL},
         parser::Parser,
         types::Event,
@@ -314,9 +315,12 @@ where
     }
 
     /// Process the next event
-    fn next_event(&mut self) -> Option<Result<Event<'de>>>
+    fn next_event(&mut self) -> ParseResult<Option<Event<'de>>>
     {
-        self.inner.parser.next_event(&mut self.inner.reader)
+        self.inner
+            .parser
+            .next_event(&mut self.inner.reader)
+            .transpose()
     }
 }
 
@@ -328,7 +332,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item>
     {
-        self.next_event()
+        self.next_event().map_err(Into::into).transpose()
     }
 }
 
@@ -353,9 +357,12 @@ where
     }
 
     /// Process the next event
-    fn next_event(&mut self) -> Option<Result<Event<'de>>>
+    fn next_event(&mut self) -> ParseResult<Option<Event<'de>>>
     {
-        self.inner.parser.next_event(&mut self.inner.reader)
+        self.inner
+            .parser
+            .next_event(&mut self.inner.reader)
+            .transpose()
     }
 }
 
@@ -367,6 +374,6 @@ where
 
     fn next(&mut self) -> Option<Self::Item>
     {
-        self.next_event()
+        self.next_event().map_err(Into::into).transpose()
     }
 }
