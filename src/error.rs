@@ -6,6 +6,8 @@
 
 use std::{error::Error as StdError, fmt};
 
+pub(crate) use macros::mkError;
+
 /// Result typedef used throughout this library's public API
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -758,6 +760,80 @@ pub(crate) mod internal
             SourceError::IO(e)
         }
     }
+}
+
+mod macros
+{
+    /// mkError allows a caller to convert any .error type
+    /// that implements From/Into any of the internal
+    /// error types defined by this module into a
+    /// external, public error.
+    ///
+    /// These conversions are controlled by the following
+    /// tokens, which correspond to one of the
+    /// [error](super) error types.
+    ///
+    /// - CODE      => internal::ErrorCode
+    /// - SOURCE    => internal::SourceError
+    /// - KIND      => internal::ErrorKind
+    /// - INTERR    => internal::Error
+    /// - ERROR     => Error
+    ///
+    /// Variants
+    ///     /1 .error => CODE|SOURCE|KIND|INTERR|ERROR,+
+    ///     /2 .error, CODE
+    ///         := /1 .error => CODE, KIND, INTERR, ERROR
+    ///     /3 .error, SOURCE
+    ///         := /1 .error => SOURCE, KIND, INTERR, ERROR
+    ///     /4 .error, KIND
+    ///         := /1 .error => KIND, INTERR, ERROR
+    ///     /5 .error, INTERR
+    ///         := /1 .error => INTERR, ERROR
+    ///     /6 .error, ERROR
+    ///         := /1 .error => ERROR
+    macro_rules! mkError {
+        ($error:expr, CODE) => {
+            $crate::error::mkError!($error => CODE, KIND, INTERR, ERROR)
+        };
+        ($error:expr, SOURCE) => {
+            $crate::error::mkError!($error => SOURCE, KIND, INTERR, ERROR)
+        };
+        ($error:expr, KIND) => {
+            $crate::error::mkError!($error => KIND, INTERR, ERROR)
+        };
+        ($error:expr, INTERR) => {
+            $crate::error::mkError!($error => INTERR, ERROR)
+        };
+        ($error:expr, ERROR) => {
+            $crate::error::mkError!($error => ERROR)
+        };
+        ($error:expr => $($op:tt),+) => {
+            $crate::error::mkError!(@priv Some($error) => $($op),+ ).unwrap()
+        };
+
+        // Recursively wrap the error in From conversions until we reach the desired endpoint
+        (@priv $error:expr => CODE $(, $rest:tt)*) => {
+            $crate::error::mkError!(@priv $error.map($crate::error::internal::ErrorCode::from) => $($rest),*)
+        };
+        (@priv $error:expr => SOURCE $(, $rest:tt)*) => {
+            $crate::error::mkError!(@priv $error.map($crate::error::internal::SourceError::from) => $($rest),*)
+        };
+        (@priv $error:expr => KIND $(, $rest:tt)*) => {
+            $crate::error::mkError!(@priv $error.map($crate::error::internal::ErrorKind::from) => $($rest),*)
+        };
+        (@priv $error:expr => INTERR $(, $rest:tt)*) => {
+            $crate::error::mkError!(@priv $error.map($crate::error::internal::Error::from) => $($rest),*)
+        };
+        (@priv $error:expr => ERROR $(, $rest:tt)*) => {
+            $crate::error::mkError!(@priv $error.map($crate::error::Error::new) => $($rest),*)
+        };
+        // Recursion terminus
+        (@priv $error:expr => $(,)?) => {
+            $error
+        };
+    }
+
+    pub(crate) use mkError;
 }
 
 impl fmt::Debug for Error
