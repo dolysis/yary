@@ -253,7 +253,7 @@ impl Parser
             // Retrieve any directives for the current document, merged
             // with the defaults
             let (start, end, directives) =
-                scan_document_directives(tokens, ArrayIter::new(DEFAULT_TAGS))?;
+                scan_document_directives(tokens, array_iterator(DEFAULT_TAGS))?;
 
             let Directives { version, tags } = directives;
             event =
@@ -268,7 +268,7 @@ impl Parser
             // Retrieve any directives for the current document, merged
             // with the defaults
             let (start, _, directives) =
-                scan_document_directives(tokens, ArrayIter::new(DEFAULT_TAGS))?;
+                scan_document_directives(tokens, array_iterator(DEFAULT_TAGS))?;
 
             // Ensure we have an explicit DocumentStart indicator
             let end = match peek!(~tokens)?
@@ -289,7 +289,7 @@ impl Parser
         else if first
         {
             let (start, end, directives) =
-                scan_document_directives(tokens, ArrayIter::new(DEFAULT_TAGS))?;
+                scan_document_directives(tokens, array_iterator(DEFAULT_TAGS))?;
 
             let Directives { version, tags } = directives;
             event =
@@ -1299,6 +1299,23 @@ fn tags_to_owned<'a>((handle, prefix): (&Slice<'a>, &Slice<'a>))
     let prefix: String = prefix.to_string();
 
     (handle.into(), prefix.into())
+}
+
+/// Wrapper around IntoIterator::into_iter that works around
+/// the hack in `std` which makes our Rust edition's
+/// ARRAY.into_iter() postfix call take the array by
+/// reference.
+///
+/// It appears that ArrayIter::new() has been deprecated in
+/// a future rust version (1.59), so this should quiet those
+/// errors, when building against stable.
+///
+/// If/when we bump the crate's MSRV to >= 1.59 we can
+/// remove this function and call the postfix .into_iter()
+/// method directly.
+fn array_iterator<T, const N: usize>(arr: [T; N]) -> ArrayIter<T, N>
+{
+    IntoIterator::into_iter(arr)
 }
 
 /// Provides an [`Iterator`] interface to interact with
