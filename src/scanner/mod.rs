@@ -9,12 +9,13 @@
 #[macro_use]
 mod macros;
 
+pub(crate) mod entry;
+pub(crate) mod error;
+pub(crate) mod flag;
+
 mod anchor;
 mod context;
 mod directive;
-pub mod entry;
-pub mod error;
-pub mod flag;
 mod key;
 mod scalar;
 mod stats;
