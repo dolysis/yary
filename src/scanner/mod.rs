@@ -60,6 +60,7 @@ pub struct Scanner
 
 impl Scanner
 {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self
     {
         Self {
