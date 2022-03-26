@@ -4,6 +4,9 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+//! Contains an implementation of [`Read`](super::Read) for
+//! [`std::io::Read`] objects.
+
 use std::{cell::UnsafeCell, fmt, io};
 
 use super::{
@@ -23,6 +26,8 @@ use crate::{
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 
+/// A [`Read`](super::Read) implementor for types
+/// implementing [`std::io::Read`].
 #[derive(Debug)]
 pub struct OwnedReader
 {
@@ -31,6 +36,8 @@ pub struct OwnedReader
 
 impl OwnedReader
 {
+    /// Instantiate a new [`OwnedReader`] from the given
+    /// [`std::io::Read`] implementation.
     pub fn new<T>(src: T) -> Self
     where
         T: io::Read + 'static,

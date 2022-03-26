@@ -4,12 +4,16 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+//! Contains an implementation of [`Read`](super::Read) for
+//! borrowed UTF8 slices (`&str`s).
+
 use super::{
     error::{ReadError, ReaderResult},
     private, Read, ReadContext, Reader,
 };
 use crate::scanner::flag::{Flags, O_EXTENDABLE};
 
+/// A [`Read`](super::Read) implementor for borrows.
 #[derive(Debug, Clone)]
 pub struct BorrowReader<'de>
 {
@@ -18,11 +22,20 @@ pub struct BorrowReader<'de>
 
 impl<'de> BorrowReader<'de>
 {
+    /// Instantiate a new [`BorrowReader`] from the given
+    /// UTF8 slice
     pub fn new(data: &'de str) -> Self
     {
         Self { data }
     }
 
+    /// Instantiate a new [`BorrowReader`] from the given
+    /// bytes, returning an error if they are not
+    /// valid UTF8.
+    ///
+    /// This is a small wrapper around [`BorrowReader::new`]
+    /// which attempts to assert that the underlying
+    /// byte slice is UTF8.
     pub(crate) fn try_from_bytes(data: &'de [u8]) -> ReaderResult<Self>
     {
         let this = std::str::from_utf8(data).map(Self::new)?;

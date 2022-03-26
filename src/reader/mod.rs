@@ -4,6 +4,20 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+//! The module contains the adapters for converting plain
+//! bytes to a representation that is useful for parsing.
+//!
+//! This behavior is defined by the [`Read`] trait, which is
+//! sealed, and cannot be implemented outside of this
+//! library.
+//!
+//! There are three conversions that are supported, each
+//! with a top level function that handles the conversion:
+//!
+//! - `&str` => [`from_utf8()`]
+//! - `&[u8]` => [`try_from_bytes()`]
+//! - `T: std::io::Read` => [`from_read()`]
+
 pub mod borrow;
 pub mod owned;
 
