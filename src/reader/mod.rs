@@ -42,10 +42,11 @@ pub trait Read: std::fmt::Debug + Sealed
     /// the given .bound, and that it may unload the given
     /// memory.
     ///
-    /// SAFETY:
-    ///     It is only safe to call this function after the
-    ///     caller has ensured there cannot be any live
-    ///     references to content below the provided .bound.
+    /// ## Safety
+    ///
+    /// It is only safe to call this function after the
+    /// caller has ensured there cannot be any live
+    /// references to content below the provided .bound.
     unsafe fn consume(&self, _bound: usize) -> Result<()>
     {
         Ok(())
