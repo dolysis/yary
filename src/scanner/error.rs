@@ -8,10 +8,10 @@ use std::fmt;
 
 use crate::error::internal::ErrorCode;
 
-pub type ScanResult<T> = std::result::Result<T, ScanError>;
+pub(crate) type ScanResult<T> = std::result::Result<T, ScanError>;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ScanError
+pub(crate) enum ScanError
 {
     /// Directive was not either YAML or TAG
     UnknownDirective,
