@@ -6,7 +6,11 @@
 
 use std::{cell::UnsafeCell, fmt, io};
 
-use super::{error::ReaderResult as Result, private::Sealed, Read, Reader};
+use super::{
+    error::{ReadError, ReaderResult},
+    private::Sealed,
+    Read, ReadContext, Reader,
+};
 use crate::{
     queue::Queue,
     scanner::{
@@ -46,7 +50,7 @@ impl OwnedReader
         scanner: &mut Scanner,
         queue: &mut Queue<TokenEntry<'de>>,
         mut opts: Flags,
-    ) -> Result<()>
+    ) -> ReaderResult<()>
     {
         loop
         {
@@ -76,17 +80,13 @@ impl OwnedReader
 
 impl Read for OwnedReader
 {
-    fn drive<'de>(
-        &'de self,
-        scanner: &mut Scanner,
-        queue: &mut Queue<TokenEntry<'de>>,
-        options: Flags,
-    ) -> Result<()>
+    fn drive<'de>(&'de self, cxt: ReadContext<'_, '_, 'de>) -> Result<(), ReadError>
     {
-        self.drive_scanner(scanner, queue, options)
+        self.drive_scanner(cxt.scanner, cxt.queue, cxt.flags)
+            .map_err(Into::into)
     }
 
-    unsafe fn consume(&self, _bound: usize) -> Result<()>
+    unsafe fn consume(&self, _bound: usize) -> Result<(), ReadError>
     {
         Ok(())
     }
@@ -111,7 +111,7 @@ impl ReadHolder
         Self { inner }
     }
 
-    pub fn read_next_chunk(&self, read_to: Option<usize>) -> Result<()>
+    pub fn read_next_chunk(&self, read_to: Option<usize>) -> ReaderResult<()>
     {
         let inner: &mut Impl = unsafe { &mut *self.inner.get() };
 
@@ -180,7 +180,7 @@ impl Impl
         &self.head
     }
 
-    fn refresh_buffer(&mut self, copy_from: Option<usize>) -> Result<()>
+    fn refresh_buffer(&mut self, copy_from: Option<usize>) -> ReaderResult<()>
     {
         // Calculate next allocation chunk
         let cap = (DEFAULT_BUFFER_SIZE * usize::max(self.tail.len(), 1) + copy_from.unwrap_or(0))
