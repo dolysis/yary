@@ -4,6 +4,14 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+//! Library error type, surfacing any issues encountered
+//! during library usage.
+//!
+//! Notably, we allow conversion from `yary`'s [`Error`]
+//! type into [`std::io::Error`], which may be more
+//! portable, at the expense of losing all of the local
+//! context this error type provides.
+
 use std::{error::Error as StdError, fmt};
 
 pub(crate) use macros::mkError;
@@ -15,6 +23,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// occur during library usage.
 pub struct Error
 {
+    /// Note we box the underlying, real error to make this
+    /// type cheaply movable up and down the stack.
     inner: Box<internal::Error>,
 }
 
