@@ -15,12 +15,12 @@ use crate::{
 };
 
 /// Type alias of the `Result`s returned from this module
-pub type ReaderResult<T> = std::result::Result<T, ReaderError>;
+pub(crate) type ReaderResult<T> = std::result::Result<T, ReaderError>;
 
 /// Possible errors that can occur while reading from YAML
 /// byte streams
 #[derive(Debug)]
-pub enum ReaderError
+pub(crate) enum ReaderError
 {
     /// Encountered invalid an UTF8 sequence
     UTF8(Utf8Error),
@@ -93,5 +93,45 @@ impl From<ReaderError> for crate::error::Error
     fn from(err: ReaderError) -> Self
     {
         crate::error::mkError!(err, KIND)
+    }
+}
+
+/// An intentionally opaque type which hides the
+/// implementation details of [`Read`] errors.
+#[repr(transparent)]
+pub struct ReadError
+{
+    pub(crate) e: ReaderError,
+}
+
+impl ReadError
+{
+    pub(crate) fn new(e: ReaderError) -> Self
+    {
+        Self { e }
+    }
+}
+
+impl From<ReaderError> for ReadError
+{
+    fn from(err: ReaderError) -> Self
+    {
+        Self::new(err)
+    }
+}
+
+impl From<ReadError> for ReaderError
+{
+    fn from(err: ReadError) -> Self
+    {
+        err.e
+    }
+}
+
+impl From<ScanError> for ReadError
+{
+    fn from(err: ScanError) -> Self
+    {
+        Self::new(ReaderError::from(err))
     }
 }

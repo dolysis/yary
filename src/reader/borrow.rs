@@ -4,15 +4,11 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-use super::{error::ReaderResult as Result, private, Read, Reader};
-use crate::{
-    queue::Queue,
-    scanner::{
-        entry::TokenEntry,
-        flag::{Flags, O_EXTENDABLE},
-        Scanner,
-    },
+use super::{
+    error::{ReadError, ReaderResult},
+    private, Read, ReadContext, Reader,
 };
+use crate::scanner::flag::{Flags, O_EXTENDABLE};
 
 #[derive(Debug, Clone)]
 pub struct BorrowReader<'de>
@@ -27,7 +23,7 @@ impl<'de> BorrowReader<'de>
         Self { data }
     }
 
-    pub(crate) fn try_from_bytes(data: &'de [u8]) -> Result<Self>
+    pub(crate) fn try_from_bytes(data: &'de [u8]) -> ReaderResult<Self>
     {
         let this = std::str::from_utf8(data).map(Self::new)?;
 
@@ -42,21 +38,17 @@ impl<'de> BorrowReader<'de>
 
 impl<'a> Read for BorrowReader<'a>
 {
-    fn drive<'de>(
-        &'de self,
-        scanner: &mut Scanner,
-        queue: &mut Queue<TokenEntry<'de>>,
-        options: Flags,
-    ) -> Result<()>
+    fn drive<'de>(&'de self, cxt: ReadContext<'_, '_, 'de>) -> Result<(), ReadError>
     {
         // This implementation is never extendable, so we remove the
         // option from the set if it exists
-        scanner.scan_tokens(options & !O_EXTENDABLE, self.data, queue)?;
+        cxt.scanner
+            .scan_tokens(cxt.flags & !O_EXTENDABLE, self.data, cxt.queue)?;
 
         Ok(())
     }
 
-    unsafe fn consume(&self, _bound: usize) -> Result<()>
+    unsafe fn consume(&self, _bound: usize) -> Result<(), ReadError>
     {
         Ok(())
     }

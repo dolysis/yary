@@ -13,9 +13,12 @@ use crate::{
     error::Error,
     queue::Queue,
     reader::{
-        borrow::BorrowReader, error::ReaderResult as Result, owned::OwnedReader, private::Sealed,
+        borrow::BorrowReader,
+        error::{ReadError, ReaderResult},
+        owned::OwnedReader,
+        private::Sealed,
     },
-    scanner::{entry::TokenEntry, flag::Flags, Scanner},
+    scanner::{entry::TokenEntry, flag::Flags as ScannerFlags, Scanner},
 };
 
 /// Instantiate a new [`Read`]er from the given UTF8 string
@@ -92,12 +95,7 @@ pub trait Read: std::fmt::Debug + Sealed
     /// Drive the .scanner from the byte stream with the
     /// provided .options, placing output into the
     /// .queue
-    fn drive<'de>(
-        &'de self,
-        scanner: &mut Scanner,
-        queue: &mut Queue<TokenEntry<'de>>,
-        options: Flags,
-    ) -> Result<()>;
+    fn drive<'de>(&'de self, cxt: ReadContext<'_, '_, 'de>) -> Result<(), ReadError>;
 
     /// Hint to the underlying implementation that no live
     /// references exist to any data read below
@@ -109,9 +107,34 @@ pub trait Read: std::fmt::Debug + Sealed
     /// It is only safe to call this function after the
     /// caller has ensured there cannot be any live
     /// references to content below the provided .bound.
-    unsafe fn consume(&self, _bound: usize) -> Result<()>
+    unsafe fn consume(&self, _bound: usize) -> Result<(), ReadError>
     {
         Ok(())
+    }
+}
+
+/// An intentionally opaque type which hides the
+/// implementation details of [`Read`] methods.
+pub struct ReadContext<'a, 'b, 'de>
+{
+    scanner: &'a mut Scanner,
+    queue:   &'b mut Queue<TokenEntry<'de>>,
+    flags:   ScannerFlags,
+}
+
+impl<'a, 'b, 'de> ReadContext<'a, 'b, 'de>
+{
+    fn new(
+        scanner: &'a mut Scanner,
+        queue: &'b mut Queue<TokenEntry<'de>>,
+        flags: ScannerFlags,
+    ) -> Self
+    {
+        Self {
+            scanner,
+            queue,
+            flags,
+        }
     }
 }
 
@@ -124,7 +147,7 @@ pub(crate) struct Reader<'de, T: 'de>
     scanner: Scanner,
     queue:   Queue<TokenEntry<'de>>,
 
-    options:   Flags,
+    options:   ScannerFlags,
     exhausted: bool,
 
     inner: &'de T,
@@ -134,7 +157,7 @@ impl<'de, T> Reader<'de, T>
 where
     T: Read,
 {
-    pub fn new(read: &'de T, opts: Flags) -> Self
+    pub fn new(read: &'de T, opts: ScannerFlags) -> Self
     {
         Self {
             scanner:   Scanner::new(),
@@ -145,12 +168,15 @@ where
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&mut Queue<TokenEntry<'de>>>
+    pub fn scan_tokens(&mut self) -> ReaderResult<&mut Queue<TokenEntry<'de>>>
     {
         let start = self.queue.len();
 
-        self.inner
-            .drive(&mut self.scanner, &mut self.queue, self.options)?;
+        self.inner.drive(ReadContext::new(
+            &mut self.scanner,
+            &mut self.queue,
+            self.options,
+        ))?;
 
         self.exhausted = start == self.queue.len();
 
@@ -174,7 +200,7 @@ where
 
     pub(crate) fn from_parts(
         read: &'de T,
-        options: Flags,
+        options: ScannerFlags,
         queue: Queue<TokenEntry<'de>>,
         exhausted: bool,
     ) -> Self
@@ -205,7 +231,7 @@ where
         Self { peek: None, reader }
     }
 
-    pub fn pop(&mut self) -> Result<Option<TokenEntry<'de>>>
+    pub fn pop(&mut self) -> ReaderResult<Option<TokenEntry<'de>>>
     {
         match self.peek.take()
         {
@@ -220,7 +246,7 @@ where
         }
     }
 
-    pub fn peek(&mut self) -> Result<Option<&mut TokenEntry<'de>>>
+    pub fn peek(&mut self) -> ReaderResult<Option<&mut TokenEntry<'de>>>
     {
         match self.peek
         {
@@ -252,7 +278,7 @@ where
         self.reader.queue()
     }
 
-    fn take_next(&mut self) -> Result<()>
+    fn take_next(&mut self) -> ReaderResult<()>
     {
         // Ensure we don't overwrite an existing entry
         if self.peek.is_some()
@@ -289,7 +315,7 @@ mod test_util
 
     pub(super) type TestResult = anyhow::Result<()>;
 
-    pub(super) const TEST_FLAGS: Flags = O_ZEROED;
+    pub(super) const TEST_FLAGS: ScannerFlags = O_ZEROED;
     pub(super) const TEST_DATA: [&str; 3] = [YAML_SCALAR, YAML_SEQUENCE, YAML_MAPPING];
 
     pub(super) const YAML_SCALAR: &str = "'a simple, root scalar'";
