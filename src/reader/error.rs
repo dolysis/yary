@@ -97,7 +97,7 @@ impl From<ReaderError> for crate::error::Error
 }
 
 /// An intentionally opaque type which hides the
-/// implementation details of [`Read`] errors.
+/// implementation details of [`Read`](super::Read) errors.
 #[repr(transparent)]
 pub struct ReadError
 {
