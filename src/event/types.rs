@@ -11,8 +11,10 @@ use std::{array::IntoIter as ArrayIter, borrow::Cow, collections::HashMap};
 
 use crate::{
     scanner::{entry::Lazy, error::ScanResult},
-    token::{ScalarStyle, Slice, StreamEncoding, Token},
+    token::Token,
 };
+
+pub type Slice<'a> = std::borrow::Cow<'a, str>;
 
 pub const DEFAULT_TAGS: [(Slice<'static>, Slice<'static>); 2] = [
     (Cow::Borrowed("!"), Cow::Borrowed("!")),
@@ -352,3 +354,19 @@ pub struct VersionDirective
 /// Typedef map of tag directives present in the current
 /// document
 pub type TagDirectives<'de> = HashMap<Slice<'de>, Slice<'de>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StreamEncoding
+{
+    UTF8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScalarStyle
+{
+    Plain,
+    SingleQuote,
+    DoubleQuote,
+    Literal,
+    Folded,
+}

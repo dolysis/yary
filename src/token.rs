@@ -4,7 +4,7 @@
  * was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-pub type Slice<'a> = std::borrow::Cow<'a, str>;
+pub use crate::event::types::{ScalarStyle, Slice, StreamEncoding};
 
 /// Tokens that may be emitted by a YAML scanner
 #[derive(Debug, PartialEq)]
@@ -198,20 +198,4 @@ impl PartialEq<Token<'_>> for Marker
     {
         self == &Self::from(other)
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum StreamEncoding
-{
-    UTF8,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ScalarStyle
-{
-    Plain,
-    SingleQuote,
-    DoubleQuote,
-    Literal,
-    Folded,
 }
