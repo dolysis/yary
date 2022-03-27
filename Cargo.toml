@@ -6,7 +6,7 @@ repository = "https://github.com/dolysis/yary"
 description = "Lazy, efficient YAML parsing"
 readme = "docs/README.md"
 
-version = "0.1.0"
+version = "0.1.1"
 license = "MPL-2.0"
 
 keywords = ["yaml", "parser", "parsing"]
