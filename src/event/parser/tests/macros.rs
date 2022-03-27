@@ -68,7 +68,7 @@ macro_rules! event {
                         types::DEFAULT_VERSION
                     ),
                     tags: std::iter::FromIterator::from_iter(
-                        std::array::IntoIter::new(types::DEFAULT_TAGS).chain(vec![
+                        types::array_iterator(types::DEFAULT_TAGS).chain(vec![
                                 $($( ($crate::token::Slice::from($handle), $crate::token::Slice::from($prefix)) ),*)?
                     ])),
                 },

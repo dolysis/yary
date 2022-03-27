@@ -419,7 +419,7 @@ impl Default for Directives<'_>
     {
         Self {
             version: DEFAULT_VERSION,
-            tags:    ArrayIter::new(DEFAULT_TAGS).collect(),
+            tags:    array_iterator(DEFAULT_TAGS).collect(),
         }
     }
 }
@@ -452,4 +452,21 @@ pub enum ScalarStyle
     DoubleQuote,
     Literal,
     Folded,
+}
+
+/// Wrapper around IntoIterator::into_iter that works around
+/// the hack in `std` which makes our Rust edition's
+/// ARRAY.into_iter() postfix call take the array by
+/// reference.
+///
+/// It appears that ArrayIter::new() has been deprecated in
+/// a future rust version (1.59), so this should quiet those
+/// errors, when building against stable.
+///
+/// If/when we bump the crate's MSRV to >= 1.59 we can
+/// remove this function and call the postfix .into_iter()
+/// method directly.
+pub(in crate::event) fn array_iterator<T, const N: usize>(arr: [T; N]) -> ArrayIter<T, N>
+{
+    IntoIterator::into_iter(arr)
 }
