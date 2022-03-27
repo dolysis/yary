@@ -41,7 +41,7 @@ use crate::{
 type Tokens<'de> = Queue<TokenEntry<'de>>;
 
 #[derive(Debug)]
-pub struct Scanner
+pub(crate) struct Scanner
 {
     /// Offset into the data buffer to start at
     offset: usize,

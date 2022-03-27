@@ -20,15 +20,15 @@ use crate::{
 /// Note that this wrapper *does not* compare tokens, so if
 /// you desire that ensure that you compare them directly
 #[derive(Debug)]
-pub struct TokenEntry<'de>
+pub(crate) struct TokenEntry<'de>
 {
-    pub wrap: MaybeToken<'de>,
-    read_at:  usize,
+    pub(crate) wrap: MaybeToken<'de>,
+    read_at:         usize,
 }
 
 impl<'de> TokenEntry<'de>
 {
-    pub fn new<T>(token: T, read_at: usize) -> Self
+    pub(crate) fn new<T>(token: T, read_at: usize) -> Self
     where
         T: Into<MaybeToken<'de>>,
     {
@@ -38,22 +38,22 @@ impl<'de> TokenEntry<'de>
         }
     }
 
-    pub fn read_at(&self) -> usize
+    pub(crate) fn read_at(&self) -> usize
     {
         self.read_at
     }
 
-    pub fn marker(&self) -> Marker
+    pub(crate) fn marker(&self) -> Marker
     {
         self.wrap.marker()
     }
 
-    pub fn is_processed(&self) -> bool
+    pub(crate) fn is_processed(&self) -> bool
     {
         matches!(&self.wrap, MaybeToken::Token(_))
     }
 
-    pub fn into_token(self) -> Result<Token<'de>>
+    pub(crate) fn into_token(self) -> Result<Token<'de>>
     {
         self.wrap.into_token()
     }
@@ -86,7 +86,7 @@ impl<'de> Ord for TokenEntry<'de>
 }
 
 #[derive(Debug)]
-pub enum MaybeToken<'de>
+pub(crate) enum MaybeToken<'de>
 {
     Token(Token<'de>),
     Deferred(Lazy<'de>),
@@ -132,7 +132,7 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct Lazy<'de>
+pub(crate) struct Lazy<'de>
 {
     inner: LazyImpl<'de>,
 }
