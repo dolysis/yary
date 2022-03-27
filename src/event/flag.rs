@@ -33,7 +33,7 @@ pub const O_NIL: Flags = Flags::empty();
 ///
 /// In particular, scalars events will not be fully
 /// processed, instead being returned as
-/// [Scalar::Lazy] variants.
+/// [ScalarLike::Lazy] variants.
 ///
 /// This means that any allocations, escape parsing
 /// or line joins will be deferred until the caller
@@ -48,7 +48,7 @@ pub const O_NIL: Flags = Flags::empty();
 /// the caller decides to never materialize the
 /// underlying scalar.
 ///
-/// [Scalar::Lazy]: super::types::Scalar::Lazy
+/// [ScalarLike::Lazy]: super::types::ScalarLike::Lazy
 pub const O_LAZY: Flags = Flags::LAZY;
 
 impl Flags
