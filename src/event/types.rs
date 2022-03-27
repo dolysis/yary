@@ -21,7 +21,7 @@ pub const DEFAULT_TAGS: [(Slice<'static>, Slice<'static>); 2] = [
     (Cow::Borrowed("!!"), Cow::Borrowed("tag:yaml.org,2002:")),
 ];
 pub const DEFAULT_VERSION: VersionDirective = VersionDirective { major: 1, minor: 2 };
-pub const EMPTY_SCALAR: Scalar<'static> = Scalar::empty();
+pub const EMPTY_SCALAR: ScalarLike<'static> = ScalarLike::empty();
 
 /// Specific YAML productions found in the YAML stream. Each
 /// Event has a start and end mark indicating an approximate
@@ -99,7 +99,7 @@ pub enum EventData<'de>
     Alias(Alias<'de>),
     /// A scalar leaf node, containing (perhaps lazy)
     /// unicode slice content
-    Scalar(Node<'de, Scalar<'de>>),
+    Scalar(Node<'de, ScalarLike<'de>>),
 
     /// Start of a YAML key value production, followed by
     /// zero or more of:
@@ -147,85 +147,168 @@ pub struct Node<'de, T: 'de>
 /// evaluated, in which case a caller may trigger a fallible
 /// evaluation on demand.
 #[derive(Debug, Clone)]
-pub enum Scalar<'de>
+pub enum ScalarLike<'de>
 {
-    Eager
-    {
-        data:  Slice<'de>,
-        style: ScalarStyle,
-    },
-    Lazy
-    {
-        data: Box<Lazy<'de>>
-    },
+    Eager(Scalar<'de>),
+    Lazy(ScalarLazy<'de>),
 }
 
-impl<'de> Scalar<'de>
+impl<'de> ScalarLike<'de>
 {
-    pub fn evaluate(self) -> ScanResult<Self>
+    pub fn evaluate(self) -> Result<Scalar<'de>, crate::Error>
     {
-        match self
-        {
-            eager @ Scalar::Eager { .. } => Ok(eager),
-            Scalar::Lazy { data } => data.into_token().map(|token| match token
-            {
-                Token::Scalar(data, style) => Self::Eager { data, style },
-                // Only scalars can be deferred
-                _ => unreachable!(),
-            }),
-        }
+        self.evaluate_scalar().map_err(Into::into)
     }
 
-    pub fn ref_evaluate(&mut self) -> ScanResult<()>
+    pub fn evaluate_by_ref(&mut self) -> Result<&mut Scalar<'de>, crate::Error>
+    {
+        self.evaluate_scalar_by_ref().map_err(Into::into)
+    }
+
+    pub fn is_evaluated(&self) -> bool
+    {
+        !self.is_lazy()
+    }
+
+    pub fn is_unevaluated(&self) -> bool
+    {
+        self.is_lazy()
+    }
+
+    pub(crate) fn evaluate_scalar_by_ref(&mut self) -> ScanResult<&mut Scalar<'de>>
     {
         let this = std::mem::take(self);
 
-        *self = this.evaluate()?;
+        *self = Self::Eager(this.evaluate_scalar()?);
 
-        Ok(())
+        match self
+        {
+            ScalarLike::Eager(scalar) => Ok(scalar),
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn evaluate_scalar(self) -> ScanResult<Scalar<'de>>
+    {
+        match self
+        {
+            Self::Eager(scalar) => Ok(scalar),
+            Self::Lazy(lazy) => lazy.evaluate_scalar(),
+        }
+    }
+
+    pub(crate) fn eager(data: Slice<'de>, style: ScalarStyle) -> Self
+    {
+        Self::Eager(Scalar { data, style })
+    }
+
+    pub(crate) fn lazy(lazy: Lazy<'de>) -> Self
+    {
+        Self::Lazy(ScalarLazy { inner: lazy })
+    }
+
+    const fn is_lazy(&self) -> bool
+    {
+        matches!(self, Self::Lazy(_))
     }
 }
 
-impl Scalar<'static>
+impl ScalarLike<'static>
 {
     pub const fn empty() -> Self
     {
-        Self::Eager {
+        Self::Eager(Scalar {
             data:  Slice::Borrowed(""),
             style: ScalarStyle::Plain,
-        }
+        })
     }
 }
 
-impl<'de> PartialEq for Scalar<'de>
+impl Default for ScalarLike<'_>
+{
+    fn default() -> Self
+    {
+        ScalarLike::empty()
+    }
+}
+
+impl<'de> PartialEq for ScalarLike<'de>
 {
     fn eq(&self, other: &Self) -> bool
     {
         match (self, other)
         {
-            (
-                Self::Eager {
-                    data: l_data,
-                    style: l_style,
-                },
-                Self::Eager {
-                    data: r_data,
-                    style: r_style,
-                },
-            ) => l_data == r_data && l_style == r_style,
+            (Self::Eager(s), Self::Eager(o)) => s == o,
+            // No ordering is established between yet-to-be-evaluated scalars
             _ => false,
         }
     }
 }
 
-impl Default for Scalar<'_>
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scalar<'de>
 {
-    fn default() -> Self
+    data:  Slice<'de>,
+    style: ScalarStyle,
+}
+
+impl<'de> Scalar<'de>
+{
+    pub fn data(&self) -> &Slice
     {
-        Self::Eager {
-            data:  "".into(),
-            style: ScalarStyle::Plain,
-        }
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut Slice<'de>
+    {
+        &mut self.data
+    }
+
+    pub fn style(&self) -> ScalarStyle
+    {
+        self.style
+    }
+}
+
+impl<'de> AsRef<str> for Scalar<'de>
+{
+    fn as_ref(&self) -> &str
+    {
+        &*self.data
+    }
+}
+
+impl<'de> std::ops::Deref for Scalar<'de>
+{
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target
+    {
+        &*self.data
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScalarLazy<'de>
+{
+    inner: Lazy<'de>,
+}
+
+impl<'de> ScalarLazy<'de>
+{
+    pub fn evaluate(self) -> Result<Scalar<'de>, crate::Error>
+    {
+        self.evaluate_scalar().map_err(Into::into)
+    }
+
+    pub(crate) fn evaluate_scalar(self) -> ScanResult<Scalar<'de>>
+    {
+        self.inner.into_token().map(|t| match t
+        {
+            Token::Scalar(data, style) => Scalar { data, style },
+            // Only scalars can be deferred
+            _ => unreachable!(),
+        })
     }
 }
 

@@ -200,10 +200,9 @@ macro_rules! scalar {
         }
     };
     ($content:expr, $style:expr) => {
-        types::Scalar::Eager {
-            data:  $crate::token::Slice::from($content),
-            style: $style,
-        }
+        types::ScalarLike::eager(
+            $crate::token::Slice::from($content), $style
+        )
     };
 }
 

@@ -111,7 +111,7 @@ macro_rules! state {
 macro_rules! consume {
     ($queue:expr, $kind:tt) => {{
         #[allow(unused_imports)]
-        use $crate::{token::Token::*, scanner::entry::MaybeToken, event::types::{Event, EventData, VersionDirective, Scalar}};
+        use $crate::{token::Token::*, scanner::entry::MaybeToken, event::types::{Event, EventData, VersionDirective, ScalarLike}};
 
         #[allow(clippy::collapsible_match)]
         pop!($queue).map(|entry| consume!(@wrap entry, $kind))
@@ -122,10 +122,10 @@ macro_rules! consume {
 
         match $entry.wrap {
             MaybeToken::Token(token) => match token {
-                Scalar(data, style) => (end, end, Scalar::Eager { data, style }),
+                Scalar(data, style) => (end, end, ScalarLike::eager(data, style)),
                 _ => unreachable!(),
             },
-            MaybeToken::Deferred(lazy) => (end, end, Scalar::Lazy { data: Box::new(lazy) })
+            MaybeToken::Deferred(lazy) => (end, end, ScalarLike::lazy(lazy))
         }
     }};
     (@wrap $entry:expr, $kind:tt) => {{

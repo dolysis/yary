@@ -255,11 +255,11 @@ where
     /// for e in events.iter().filter_map(Result::ok)
     /// {
     ///     if let EventData::Scalar(Node {
-    ///         content: Scalar::Eager { data, .. },
+    ///         content: ScalarLike::Eager(scalar),
     ///         ..
     ///     }) = e.data()
     ///     {
-    ///         if let Ok(digit) = data.parse::<i32>()
+    ///         if let Ok(digit) = scalar.parse::<i32>()
     ///         {
     ///             println!("Got digit: {}", digit);
     ///         }
