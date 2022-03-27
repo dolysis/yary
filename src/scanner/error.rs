@@ -131,3 +131,11 @@ impl From<ScanError> for ErrorCode
         }
     }
 }
+
+impl From<ScanError> for crate::error::Error
+{
+    fn from(err: ScanError) -> Self
+    {
+        crate::error::mkError!(err, CODE)
+    }
+}
