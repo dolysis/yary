@@ -55,16 +55,16 @@
 //! regarding the [`Event`] stream, beyond anything they
 //! wish to collect from the stream.
 //!
-//! [`StreamStart`]:    enum@types::EventData::StreamStart
-//! [`StreamEnd`]:      enum@types::EventData::StreamEnd
-//! [`DocumentStart`]:  enum@types::EventData::DocumentStart
-//! [`DocumentEnd`]:    enum@types::EventData::DocumentEnd
-//! [`MappingStart`]:   enum@types::EventData::MappingStart
-//! [`MappingEnd`]:     enum@types::EventData::MappingEnd
-//! [`SequenceStart`]:  enum@types::EventData::SequenceStart
-//! [`SequenceEnd`]:    enum@types::EventData::SequenceEnd
-//! [`Scalar`]:         enum@types::EventData::Scalar
-//! [`Alias`]:          enum@types::EventData::Alias
+//! [`StreamStart`]:    type@types::EventData::StreamStart
+//! [`StreamEnd`]:      type@types::EventData::StreamEnd
+//! [`DocumentStart`]:  type@types::EventData::DocumentStart
+//! [`DocumentEnd`]:    type@types::EventData::DocumentEnd
+//! [`MappingStart`]:   type@types::EventData::MappingStart
+//! [`MappingEnd`]:     type@types::EventData::MappingEnd
+//! [`SequenceStart`]:  type@types::EventData::SequenceStart
+//! [`SequenceEnd`]:    type@types::EventData::SequenceEnd
+//! [`Scalar`]:         type@types::EventData::Scalar
+//! [`Alias`]:          type@types::EventData::Alias
 //! [`Node`]:           struct@types::Node
 //! [`NodeKind`]:       enum@types::NodeKind
 //! [`Token`]:          enum@crate::token::Token
