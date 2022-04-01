@@ -1,0 +1,74 @@
+
+name: "Tests"
+
+on:
+  pull_request:
+  workflow_dispatch:
+  # Need to run it on master redundantly, or caches don't work
+  push:
+    branches: ["master"]
+
+env:
+  RUST_BACKTRACE: full
+  CARGO_INCREMENTAL: 0
+  YARY_COLOR: 0
+
+jobs:
+  tests:
+    name: "[${{ matrix.os }}/${{ matrix.rust }}] ${{ matrix.just.name }}"
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        rust:
+          - stable
+          - 1.53
+        just:
+          - name: "Unit Tests"
+            recipe: test
+            vars: ""
+          - name: "Unit Tests {test_lazy}"
+            recipe: test
+            vars: Features=test_lazy
+          - name: "Unit Tests {test_buffer_small}"
+            recipe: test
+            vars: Features=test_buffer_small
+          - name: "Unit Tests {test_buffer_small,test_lazy}"
+            recipe: test
+            vars: Features=test_buffer_small,test_lazy
+          - name: "Doc Tests"
+            recipe: test-docs
+            vars: ""
+          - name: "Test Examples"
+            recipe: test-examples
+            vars: ""
+    steps:
+      # Checkout code
+      - name: "Git checkout"
+        uses: actions/checkout@v2
+
+      # Install Rust toolchain
+      - name: "Install Rust ${{ matrix.rust }}"
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          default: true
+          components: rustfmt
+
+      # Install recipe runner
+      - name: "Install Just"
+        uses: extractions/setup-just@v1
+        with:
+          just-version: 1
+
+      # Save cache
+      - name: "Save Cargo cache"
+        uses: Swatinem/rust-cache@v1
+
+      # Run tasks
+      - name: "Task ${{ matrix.just.name }}"
+        run: just ${{ matrix.just.vars }} ${{ matrix.just.recipe }}
+
