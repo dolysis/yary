@@ -26,6 +26,12 @@ check:
   @$Say "Checking library for syntax errors..."
   @$Cargo check
 
+# Print entire changelog
+changelog range=None: (_changelog range)
+
+# Print patch notes for unreleased changes
+patchnotes range=None: (_changelog if range != None { range } else { LibVersion + ".." } "all")
+
 # Build the library
 build: (_build Profile Features)
 
@@ -113,7 +119,10 @@ audit: _need_audit
   @#$Cargo audit
 
 # Update the library's version to the specified
-bump-version to=LibVersion: (_bump-cargo-version "Cargo.toml" to) check
+bump-version to: (_git-stash "all") (_bump-cargo-version "Cargo.toml" to) check (_bump-git-version to)
+  @$Git stash pop
+  @$Say "Run the following command when ready"
+  @echo "{{C_RED}}==> {{C_GREEN}}git push --atomic origin master {{to}}{{C_RESET}}"
 
 # ~~~ Private recipes ~~~
 
@@ -160,6 +169,9 @@ _build-docs open="no" check="no" features=Features:
     {{ if features != None { "--features " + features } else { "--all-features" } }} \
     {{ if open =~ '(?i)^open|true|yes|1$' { "--open" } else { None } }}
 
+@_changelog range=None $strip=None $output=None +extra=None: _need_cliff
+  $Cliff {{extra}} ${strip:+--strip $strip} ${output:+--output $output} {{range}}
+
 # Tiny perl script to bump the Cargo version field
 @_bump-cargo-version file $version temp=`mktemp`:
   $Say "Bumping {{file}} version to $version"
@@ -169,6 +181,17 @@ _build-docs open="no" check="no" features=Features:
     -- -version=$version < {{file}} > {{temp}} \
     && mv -f {{temp}} {{file}} \
     {{ if Dryrun != None { '"' } else { '' } }}
+
+# Add commit + tag to Git for the provided version
+@_bump-git-version version temp=`mktemp`: (_changelog LibVersion + ".." "all" temp "--tag" version "--body" '"$(cat .git-cliff/simple.tera)"') (_changelog None None "CHANGELOG.md" "--tag" version)
+  $Say "Adding git tag {{version}} to HEAD"
+  {{ if Dryrun == None { "git branch --show-current | grep -qF 'master' || $Say 'Refusing to set git tag, branch is not master' && false" } else { None } }}
+  $Git commit -am 'chore: release {{version}}'
+  $Git tag -a {{version}} -F {{temp}}
+
+@_git-stash $untracked=None +refs=None:
+  $Say "Stashing local changes..."
+  $Git stash push ${untracked:+--include-untracked} {{refs}}
 
 # Install rustc version that we use in this repo + all the components we're expecting
 @_fresh-system msrv=RustVersion:
@@ -183,8 +206,8 @@ _build-docs open="no" check="no" features=Features:
 
 # ~~~ Cargo binary management ~~~
 
-_build_deps update=None: (_need_cache update) (_need_udeps update) (_need_audit update) (_need_tree update)
-_clean_deps: _clean_cache _clean_udeps _clean_audit _clean_tree
+_build_deps update=None: (_need_cache update) (_need_udeps update) (_need_audit update) (_need_tree update) (_need_cliff update)
+_clean_deps: _clean_cache _clean_udeps _clean_audit _clean_tree _clean_cliff
 
 # Cargo udeps
 _need_udeps update=None: (_need "udeps" update None "nightly")
@@ -202,9 +225,13 @@ _clean_audit: (_clean_need "audit")
 _need_tree update=None: (_need "tree" update None "nightly")
 _clean_tree: (_clean_need "tree")
 
+# Git-cliff
+_need_cliff update=None: (_need "git-cliff" update None "nightly" None)
+_clean_cliff: (_clean_need "git-cliff")
+
 # Specify a dependency on a cargo binary
-@_need crate $update=None features=None $nightly=None:
-  needed=cargo-{{crate}}; \
+@_need crate $update=None features=None $nightly=None prefix="cargo-":
+  needed={{ if prefix != None { prefix + crate } else { crate } }}; \
     {{ if update == None { "command -v $needed 2>/dev/null 1>/dev/null" } else { "false" } }} \
     || $Cargo ${nightly:++nightly} install \
       ${update:+--force} \
@@ -226,6 +253,7 @@ export Rustup           := if Dryrun == None { "rustup" } else { DryrunPrefix + 
 export Git              := if Dryrun == None { "git" } else { DryrunPrefix + "git" }
 export Sed              := if Dryrun == None { "sed" } else { DryrunPrefix + "sed" }
 export Perl             := if Dryrun == None { "perl" } else { DryrunPrefix + "perl" }
+export Cliff            := if Dryrun == None { "git-cliff" } else { DryrunPrefix + "git-cliff" }
 export DRYRUN           := if Dryrun == None { None } else { "1" }
 export NODRYRUN         := if Dryrun == None { "1" } else { None }
 export RUSTFLAGS        := RustFlags
