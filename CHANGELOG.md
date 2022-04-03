@@ -1,8 +1,22 @@
 # Yary Changelog
 
-## [0.1.2 - 2022-04-03](https://github.com/dolysis/yary/releases/tag/0.1.2)
+## [v0.1.3 - 2022-04-03](https://github.com/dolysis/yary/releases/tag/v0.1.3)
 
-[v0.1.1..0.1.2](https://github.com/dolysis/yary/compare/ee8c93eb3ded564c0bd94597e3a8855535610978..fcf85c98bd605846ef2808321d8e87259bc5f003)
+[v0.1.2..v0.1.3](https://github.com/dolysis/yary/compare/fcf85c98bd605846ef2808321d8e87259bc5f003..1c276d35c4f19b8d66965a7e21e1b606003ab3b5)
+### Build
+
+- Fix version prefix in bump-version ([1c276d3](https://github.com/dolysis/yary/commit/1c276d35c4f19b8d66965a7e21e1b606003ab3b5))
+- Fix template name in _bump-git-version ([1ac0685](https://github.com/dolysis/yary/commit/1ac0685216fdb20a9dac3f620525b3486421160a))
+- Rename and improve template for git tag patchnotes ([33f146b](https://github.com/dolysis/yary/commit/33f146b550b74dafce32906595f4669db68de4e0))
+- Explicitly select files to include in bump-version commits ([2b49e40](https://github.com/dolysis/yary/commit/2b49e4068b1792a994ca5ea82115a4ce7029dfe2))
+
+### Chores
+
+- Release v0.1.2 ([ec9e436](https://github.com/dolysis/yary/commit/ec9e436037b8ea21981ef033e9126c14969c4c08))
+
+## [v0.1.2 - 2022-04-03](https://github.com/dolysis/yary/releases/tag/v0.1.2)
+
+[v0.1.1..v0.1.2](https://github.com/dolysis/yary/compare/ee8c93eb3ded564c0bd94597e3a8855535610978..fcf85c98bd605846ef2808321d8e87259bc5f003)
 ### Build
 
 - Refuse to bump-version when branch is not master ([fcf85c9](https://github.com/dolysis/yary/commit/fcf85c98bd605846ef2808321d8e87259bc5f003))
