@@ -1,10 +1,18 @@
 {%- if version -%}
-    ## [{{ version }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+    +
+    ===================
+    {{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}
+    ===================
 {%- else -%}
-    ## Unreleased
+    +
+    ==========
+    Unreleased
+    ==========
 {%- endif -%}
+{%- if true %}
+{% endif -%}
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | upper_first }}
+    {{ group | upper_first }}
     {%- for commit in commits %}
         - {% if commit.breaking %}**breaking** {% endif %}{{ commit.message }}
     {%- endfor -%}
