@@ -119,10 +119,9 @@ audit: _need_audit
   @#$Cargo audit
 
 # Update the library's version to the specified
-bump-version to: (_git-stash "all") (_bump-cargo-version "Cargo.toml" to) check (_bump-git-version to)
-  @$Git stash pop
+bump-version to: (_bump-cargo-version "Cargo.toml" to) check (_bump-git-version to)
   @$Say "Run the following command when ready"
-  @echo "{{C_RED}}==> {{C_GREEN}}git push --atomic origin master {{to}}{{C_RESET}}"
+  @echo "{{C_RED}}==> {{C_GREEN}}git push --atomic origin master v{{to}}{{C_RESET}}"
 
 # ~~~ Private recipes ~~~
 
@@ -188,13 +187,9 @@ _build-docs open="no" check="no" features=Features:
   if ! git branch --show-current | grep -qF 'master'; then \
     $Say 'Refusing to set git tag, branch is not master' && false; \
   fi
-  $Git add -A
+  $Git add Cargo.toml Cargo.lock CHANGELOG.md
   $Git commit -m 'chore: release v{{version}}'
   $Git tag -a v{{version}} -F {{temp}}
-
-@_git-stash $untracked=None +refs=None:
-  $Say "Stashing local changes..."
-  $Git stash push ${untracked:+--include-untracked} {{refs}}
 
 # Install rustc version that we use in this repo + all the components we're expecting
 @_fresh-system msrv=RustVersion:
