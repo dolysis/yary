@@ -182,7 +182,7 @@ _build-docs open="no" check="no" features=Features:
     {{ if Dryrun != None { '"' } else { '' } }}
 
 # Add commit + tag to Git for the provided version
-@_bump-git-version version temp=`mktemp`: (_changelog LibVersion + ".." "all" temp "--tag" version "--body" '"$(cat .git-cliff/simple.tera)"') (_changelog None None "CHANGELOG.md" "--tag" version)
+@_bump-git-version version temp=`mktemp`: (_changelog LibVersion + ".." "all" temp "--tag" version "--body" '"$(cat .git-cliff/tag.tera)"') (_changelog None None "CHANGELOG.md" "--tag" version)
   $Say "Adding git tag v{{version}} to HEAD"
   if ! git branch --show-current | grep -qF 'master'; then \
     $Say 'Refusing to set git tag, branch is not master' && false; \
