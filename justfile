@@ -119,9 +119,9 @@ audit: _need_audit
   @#$Cargo audit
 
 # Update the library's version to the specified
-bump-version to: (_bump-cargo-version "Cargo.toml" to) check (_bump-git-version to)
+bump-version to: (_bump-cargo-version "Cargo.toml" trim_start_match(to, "v")) check (_bump-git-version "v" + trim_start_match(to, "v"))
   @$Say "Run the following command when ready"
-  @echo "{{C_RED}}==> {{C_GREEN}}git push --atomic origin master v{{to}}{{C_RESET}}"
+  @echo "{{C_RED}}==> {{C_GREEN}}git push --atomic origin master v{{trim_start_match(to, "v")}}{{C_RESET}}"
 
 # ~~~ Private recipes ~~~
 
@@ -183,13 +183,13 @@ _build-docs open="no" check="no" features=Features:
 
 # Add commit + tag to Git for the provided version
 @_bump-git-version version temp=`mktemp`: (_changelog LibVersion + ".." "all" temp "--tag" version "--body" '"$(cat .git-cliff/tag.tera)"') (_changelog None None "CHANGELOG.md" "--tag" version)
-  $Say "Adding git tag v{{version}} to HEAD"
+  $Say "Adding git tag {{version}} to HEAD"
   if ! git branch --show-current | grep -qF 'master'; then \
     $Say 'Refusing to set git tag, branch is not master' && false; \
   fi
   $Git add Cargo.toml Cargo.lock CHANGELOG.md
-  $Git commit -m 'chore: release v{{version}}'
-  $Git tag -a v{{version}} -F {{temp}}
+  $Git commit -m 'chore: release {{version}}'
+  $Git tag -a {{version}} -F {{temp}}
 
 # Install rustc version that we use in this repo + all the components we're expecting
 @_fresh-system msrv=RustVersion:
