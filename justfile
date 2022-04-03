@@ -184,10 +184,10 @@ _build-docs open="no" check="no" features=Features:
 
 # Add commit + tag to Git for the provided version
 @_bump-git-version version temp=`mktemp`: (_changelog LibVersion + ".." "all" temp "--tag" version "--body" '"$(cat .git-cliff/simple.tera)"') (_changelog None None "CHANGELOG.md" "--tag" version)
-  $Say "Adding git tag {{version}} to HEAD"
+  $Say "Adding git tag v{{version}} to HEAD"
   {{ if Dryrun == None { "git branch --show-current | grep -qF 'master' || $Say 'Refusing to set git tag, branch is not master' && false" } else { None } }}
-  $Git commit -am 'chore: release {{version}}'
-  $Git tag -a {{version}} -F {{temp}}
+  $Git commit -am 'chore: release v{{version}}'
+  $Git tag -a v{{version}} -F {{temp}}
 
 @_git-stash $untracked=None +refs=None:
   $Say "Stashing local changes..."
