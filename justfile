@@ -126,11 +126,11 @@ bump-version to: (_bump-cargo-version "Cargo.toml" trim_start_match(to, "v")) ch
 # ~~~ Private recipes ~~~
 
 # Run cargo test with the given suite, profile, features and selector (if any)
-_test $suite=None $profile=Profile $features=Features selector=None:
+_test $suite=None $profile=Profile $features=Features $selector=None:
   @$Say "Running tests" \
     "${suite:+{{C_GREEN}}suite:{{C_YELLOW}}$suite{{C_RESET}}}" \
     "${features:+{{C_GREEN}}features:{{C_YELLOW}}$features{{C_RESET}}}" \
-    {{ if selector != None { C_GREEN + "selector:" + C_YELLOW + selector + C_RESET } else { None } }} \
+    "${selector:+{{C_GREEN}}selector:{{C_YELLOW}}$selector{{C_RESET}}}" \
     | xargs
   @$Cargo test \
     ${suite:+--$suite} \
