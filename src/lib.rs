@@ -25,6 +25,7 @@ pub mod error;
 pub mod event;
 pub mod reader;
 
+mod node;
 mod queue;
 mod scanner;
 mod token;
