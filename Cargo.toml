@@ -23,6 +23,7 @@ test_buffer_small = ["test_buffer"]
 [dependencies]
 atoi = "0.4"
 bitflags = "1"
+slotmap = "1"
 
 [dev-dependencies]
 anyhow = "1"
