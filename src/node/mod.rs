@@ -6,3 +6,7 @@
 
 //! This module contains the basis for storing arbitrary
 //! YAML documents as an in memory graph.
+
+use crate::event::types::Slice;
+
+mod nodes;
