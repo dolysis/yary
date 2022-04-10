@@ -9,4 +9,5 @@
 
 use crate::event::types::Slice;
 
+mod graph;
 mod nodes;
