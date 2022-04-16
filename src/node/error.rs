@@ -7,7 +7,16 @@
 //! This module contains the errors that may surface while
 //! parsing a YAML event stream into memory.
 
-use crate::{event::error::ParseError, scanner::error::ScanError};
+use std::fmt::{self, Debug};
+
+use crate::{
+    error::{
+        internal::{ErrorCode, ErrorKind},
+        mkError,
+    },
+    event::error::ParseError,
+    scanner::error::ScanError,
+};
 
 /// Result type returned by [`yary::node`](super)
 pub(crate) type NodeResult<T> = std::result::Result<T, NodeError>;
@@ -21,4 +30,63 @@ pub(crate) enum NodeError
 
     Parser(ParseError),
     Scanner(ScanError),
+}
+
+impl From<ParseError> for NodeError
+{
+    fn from(err: ParseError) -> Self
+    {
+        Self::Parser(err)
+    }
+}
+
+impl From<ScanError> for NodeError
+{
+    fn from(err: ScanError) -> Self
+    {
+        Self::Scanner(err)
+    }
+}
+
+impl fmt::Display for NodeError
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for NodeError
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)>
+    {
+        match self
+        {
+            Self::Parser(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<NodeError> for ErrorKind
+{
+    fn from(err: NodeError) -> Self
+    {
+        use ErrorCode::*;
+
+        match err
+        {
+            NodeError::UndefinedAlias => UndefinedAlias.into(),
+            NodeError::Parser(e) => e.into(),
+            NodeError::Scanner(e) => ErrorCode::from(e).into(),
+        }
+    }
+}
+
+impl From<NodeError> for crate::error::Error
+{
+    fn from(err: NodeError) -> Self
+    {
+        mkError!(err, KIND)
+    }
 }
