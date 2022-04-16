@@ -5,7 +5,10 @@
  */
 
 use crate::{
-    node::nodes::{NodeContext, NodeData, NodeIndex, NodeMark, NodeSpecific, Tag},
+    node::{
+        graph::Storage,
+        nodes::{NodeContext, NodeData, NodeIndex, NodeMark, NodeSpecific, Tag},
+    },
     token::{ScalarStyle, Slice},
 };
 
@@ -50,6 +53,20 @@ impl<'de> ScalarNode<'de>
     pub fn parent(&self) -> Option<NodeIndex>
     {
         self.parent
+    }
+
+    pub fn data<'a>(&self, g: &'a Storage<'de>) -> ScalarDataRef<'a, 'de>
+    {
+        let data = &g.node_data()[self.id];
+
+        ScalarDataRef::new(data)
+    }
+
+    pub fn data_mut<'a>(&self, g: &'a mut Storage<'de>) -> ScalarDataMut<'a, 'de>
+    {
+        let data = &mut g.node_data_mut()[self.id];
+
+        ScalarDataMut::new(data)
     }
 
     fn with_parent(id: NodeIndex, scalar: Slice<'de>, parent: Option<NodeIndex>) -> Self
