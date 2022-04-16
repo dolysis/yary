@@ -12,6 +12,7 @@ use crate::{
     token::Slice,
 };
 
+mod graph_visitor;
 mod transform;
 
 pub(in crate::node) trait Visitor
