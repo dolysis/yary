@@ -465,6 +465,12 @@ pub(crate) mod internal
         /// #                                  ^ MissingFlowMappingEntryOrEnd
         /// ```
         MissingFlowMappingEntryOrEnd,
+
+        /*
+         * ==== Node Errors ====
+         */
+        /// A YAML alias was used but not defined
+        UndefinedAlias,
     }
 
     /// Heavy and/or external errors that can occur during
@@ -643,7 +649,8 @@ pub(crate) mod internal
                 | MissingNode
                 | MissingKey
                 | MissingFlowSequenceEntryOrEnd
-                | MissingFlowMappingEntryOrEnd => Category::Syntax,
+                | MissingFlowMappingEntryOrEnd
+                | UndefinedAlias => Category::Syntax,
 
                 IntOverflow | CorruptStream => Category::Data,
 
@@ -713,6 +720,7 @@ pub(crate) mod internal
                 {
                     f.write_str("missing flow mapping delimiter ',' or '}'")
                 },
+                UndefinedAlias => f.write_str("undefined node alias found"),
             }
         }
     }
