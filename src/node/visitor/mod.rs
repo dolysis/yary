@@ -13,6 +13,7 @@ use crate::{
 };
 
 mod graph_visitor;
+mod stream_consumer;
 mod transform;
 
 pub(in crate::node) trait Visitor
