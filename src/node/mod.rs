@@ -9,5 +9,6 @@
 
 use crate::event::types::Slice;
 
+pub(crate) mod error;
 mod graph;
 mod nodes;
