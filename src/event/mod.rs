@@ -315,7 +315,7 @@ where
     }
 
     /// Process the next event
-    fn next_event(&mut self) -> ParseResult<Option<Event<'de>>>
+    pub(crate) fn next_event(&mut self) -> ParseResult<Option<Event<'de>>>
     {
         self.inner
             .parser
@@ -357,7 +357,7 @@ where
     }
 
     /// Process the next event
-    fn next_event(&mut self) -> ParseResult<Option<Event<'de>>>
+    pub(crate) fn next_event(&mut self) -> ParseResult<Option<Event<'de>>>
     {
         self.inner
             .parser
