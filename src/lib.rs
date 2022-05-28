@@ -24,6 +24,7 @@ pub use error::Error;
 pub mod error;
 pub mod event;
 pub mod reader;
+pub mod value;
 
 mod node;
 mod queue;
