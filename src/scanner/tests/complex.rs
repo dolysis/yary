@@ -185,3 +185,73 @@ fn plain()
         @ None
     );
 }
+
+/// Check we handle zero indented indents that could be
+/// incorrectly coalesced with normal indentation levels
+#[test]
+fn zero_indent_multilevel_coalesce()
+{
+    let data = r#"
+Objs:
+- UnitConfigName: Enemy_Lizalfos_Dark
+  HashId: 0x43ef248b
+- UnitConfigName: Item_Fish_21
+  HashId: 0x453cc5d0 # Last Ok
+Rails: # Error at the beginning of this line
+- Blah: SomeRail
+  HashId: 0x24f8f8f8
+"#;
+
+    let mut s = ScanIter::new(data);
+
+    tokens!(s =>
+        | StreamStart(StreamEncoding::UTF8),
+        | BlockMappingStart,
+        | Key,
+        | Scalar(cow!("Objs"), Plain),
+        | Value,
+        | BlockSequenceStart,
+        | BlockEntry,
+        | BlockMappingStart,
+        | Key,
+        | Scalar(cow!("UnitConfigName"), Plain),
+        | Value,
+        | Scalar(cow!("Enemy_Lizalfos_Dark"), Plain),
+        | Key,
+        | Scalar(cow!("HashId"), Plain),
+        | Value,
+        | Scalar(cow!("0x43ef248b"), Plain),
+        | BlockEnd,
+        | BlockEntry,
+        | BlockMappingStart,
+        | Key,
+        | Scalar(cow!("UnitConfigName"), Plain),
+        | Value,
+        | Scalar(cow!("Item_Fish_21"), Plain),
+        | Key,
+        | Scalar(cow!("HashId"), Plain),
+        | Value,
+        | Scalar(cow!("0x453cc5d0"), Plain),
+        | BlockEnd                                  => "expected END of 'UnitConfigName: Item_Fish_21' map",
+        | BlockEnd                                  => "expected END of 'Objs' zero indented sequence",
+        | Key,
+        | Scalar(cow!("Rails"), Plain),
+        | Value,
+        | BlockSequenceStart,
+        | BlockEntry,
+        | BlockMappingStart,
+        | Key,
+        | Scalar(cow!("Blah"), Plain),
+        | Value,
+        | Scalar(cow!("SomeRail"), Plain),
+        | Key,
+        | Scalar(cow!("HashId"), Plain),
+        | Value,
+        | Scalar(cow!("0x24f8f8f8"), Plain),
+        | BlockEnd,
+        | BlockEnd,
+        | BlockEnd,
+        | StreamEnd,
+        @ None
+    );
+}
