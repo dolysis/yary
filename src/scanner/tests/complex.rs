@@ -255,3 +255,67 @@ Rails: # Error at the beginning of this line
         @ None
     );
 }
+
+/// This test ensures that we catch zero indents on both
+/// sides of a normal indentation decrease
+#[test]
+fn zero_indent_multilevel()
+{
+    let data = r#"
+Z1:
+- Z2:
+  - N1:
+      - N2:
+          - Z3:
+            - end
+"#;
+
+    let mut s = ScanIter::new(data);
+
+    tokens!(s =>
+        | StreamStart(StreamEncoding::UTF8),
+        | BlockMappingStart                     => "expected START of Z1 mapping",
+        | Key,
+        | Scalar(cow!("Z1"), Plain),
+        | Value,
+        | BlockSequenceStart                    => "expected START of zero indent sequence 1",
+        | BlockEntry,
+        | BlockMappingStart                     => "expected START of Z2 mapping",
+        | Key,
+        | Scalar(cow!("Z2"), Plain),
+        | Value,
+        | BlockSequenceStart                    => "expected START of zero indent sequence 2",
+        | BlockEntry,
+        | BlockMappingStart                     => "expected START of N1 mapping",
+        | Key,
+        | Scalar(cow!("N1"), Plain),
+        | Value,
+        | BlockSequenceStart                    => "expected START of normal indent sequence 1",
+        | BlockEntry,
+        | BlockMappingStart                     => "expected START of N2 mapping",
+        | Key,
+        | Scalar(cow!("N2"), Plain),
+        | Value,
+        | BlockSequenceStart                    => "expected START of normal indent sequence 2",
+        | BlockEntry,
+        | BlockMappingStart                     => "expected START of Z3 mapping",
+        | Key,
+        | Scalar(cow!("Z3"), Plain),
+        | Value,
+        | BlockSequenceStart                    => "expected START of zero indent sequence 3",
+        | BlockEntry,
+        | Scalar(cow!("end"), Plain),
+        | BlockEnd                              => "expected END of zero indent sequence 3",
+        | BlockEnd                              => "expected END of Z3 mapping",
+        | BlockEnd                              => "expected END of normal indent sequence 2",
+        | BlockEnd                              => "expected END of N2 mapping",
+        | BlockEnd                              => "expected END of normal indent sequence 1",
+        | BlockEnd                              => "expected END of N1 mapping",
+        | BlockEnd                              => "expected END of zero indent sequence 2",
+        | BlockEnd                              => "expected END of Z2 mapping",
+        | BlockEnd                              => "expected END of zero indent sequence 1",
+        | BlockEnd                              => "expected END of Z1 mapping",
+        | StreamEnd,
+        @ None
+    );
+}
