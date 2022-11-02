@@ -139,8 +139,8 @@ impl Scanner
         self.expire_stale_saved_key()?;
 
         // Handle indentation unrolling
-        self.pop_zero_indent_sequence(*base, tokens)?;
         self.unroll_indent(tokens, self.stats.column)?;
+        self.pop_zero_indent_sequence(*base, tokens)?;
 
         // Is it the end of a stream?
         if base.is_empty() || self.state == StreamState::Done
